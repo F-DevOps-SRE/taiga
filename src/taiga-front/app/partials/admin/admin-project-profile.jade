@@ -1,0 +1,37 @@
+
+//- This source code is licensed under the terms of the
+//- GNU Affero General Public License found in the LICENSE file in
+//- the root directory of this source tree.
+//-
+//- Copyright (c) 2021-present Kaleidos INC
+
+doctype html
+
+tg-project-archived-warning
+div.wrapper(
+    tg-project-profile
+    ng-controller="ProjectProfileController as ctrl"
+    ng-init="section='admin'; sectionName='ADMIN.PROJECT_PROFILE.PROJECT_DETAILS'"
+)
+    tg-project-menu
+
+    sidebar.menu-secondary.sidebar.settings-nav(tg-admin-navigation="project-profile")
+        include ../includes/modules/admin-menu
+
+    sidebar.menu-tertiary.sidebar(tg-admin-navigation="details")
+        include ../includes/modules/admin-submenu-project-profile
+
+    section.main.project-details
+        header
+            include ../includes/components/mainTitle
+
+        div(ng-if="project.archived_code")
+            include ../includes/modules/admin-project-profile-archived
+
+        div(ng-if="!project.archived_code")
+            include ../includes/modules/admin-project-profile
+
+
+
+div.lightbox.lightbox-delete-project(tg-lb-delete-project)
+    include ../includes/modules/lightbox-delete-project

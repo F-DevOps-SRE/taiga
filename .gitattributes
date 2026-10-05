@@ -1,0 +1,5 @@
+# Store text as LF in the repo; each machine checks out its native line endings
+* text=auto
+
+# Shell scripts must stay LF everywhere or they fail inside Linux containers
+*.sh text eol=lf
