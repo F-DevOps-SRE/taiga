@@ -6,6 +6,8 @@ Este repositorio contiene el proyecto del curso: empaquetar, aprovisionar, gober
 
 El sistema seleccionado es [Taiga](https://taiga.io), una plataforma de gestión ágil de proyectos.
 
+El diagrama de componentes y conectores is: ![C&C](C&C.png)
+
 ## Origen del código
 
 **El código bajo `src/` no fue escrito por este equipo.** Fue tomado de los repositorios oficiales de Taiga ([github.com/taigaio](https://github.com/taigaio)) con fines exclusivamente académicos, en los siguientes commits:
