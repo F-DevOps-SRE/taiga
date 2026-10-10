@@ -15,9 +15,13 @@ jobs:
       security-events: write
 
     steps:
-    # Descargar el código fuente para usarlo en la máquina virtual creada previamente
+      # Descargar el código fuente para usarlo en la máquina virtual creada previamente
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Create dummy .env file
+        run: |
+          cp .env.example .env 2>/dev/null || touch .env
 
       # Requisito 1: Validación estática de sintaxis y buenas prácticas sobre el Dockerfile y manifiestos (linters)
       - name: Lint all Dockerfiles
@@ -45,7 +49,7 @@ jobs:
             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest image --exit-code 0 --severity CRITICAL,HIGH "$img"
           done
 
-       # Requisito 4: Publicación automática de la imagen resultante en un registro de contenedores (GitHub Packages / Docker Hub)
+      # Requisito 4: Publicación automática de la imagen resultante en un registro de contenedores (GitHub Packages / Docker Hub)
       - name: Push images with Docker Compose
         run: |
           docker compose push
