@@ -48,4 +48,4 @@ jobs:
        # Requisito 4: Publicación automática de la imagen resultante en un registro de contenedores (GitHub Packages / Docker Hub)
       - name: Push images with Docker Compose
         run: |
-          docker compose push          docker compose build
+          docker compose push
