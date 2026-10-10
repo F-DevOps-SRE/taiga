@@ -1,7 +1,7 @@
 name: CI Pipeline - FOSS App #Nombre del flujo
 
 # 1. Disparadores: Se ejecuta ante cada Push o Pull Request hacia la rama principal
-on: #Indica cuándo debe arrancar el porceso. Ocurre cada vez que hay un push o pull request a la rama principal.
+on: #Indica cuándo debe arrancar el proceso. Ocurre cada vez que hay un push o pull request a la rama principal.
   push: #Subir cambios
     branches: [ "main", "master" ]
   pull_request: #Pedir integrar cambios
@@ -9,7 +9,7 @@ on: #Indica cuándo debe arrancar el porceso. Ocurre cada vez que hay un push o 
 
 jobs:
   build-validate-publish:
-    runs-on: ubuntu-latest #Define la máquina virtual donde se va a ejecutar todo el trabajo.\
+    runs-on: ubuntu-latest #Define la máquina virtual donde se va a ejecutar todo el trabajo.
     permissions:
       contents: read
       packages: write
@@ -22,9 +22,8 @@ jobs:
 
     # Requisito 1: Validación estática de sintaxis y buenas prácticas sobre el Dockerfile y manifiestos (linters)
     - name: Lint Dockerfile
-      uses: jbergstroem/hadolint-action@master
-      with:
-        dockerfile: Dockerfile
+      run: |
+        docker run --rm -i hadolint/hadolint < Dockerfile
 
     # Autenticación con el registro de contenedores de GitHub (GHCR)
     - name: Log in to the Container Registry
