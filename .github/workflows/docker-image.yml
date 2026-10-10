@@ -22,7 +22,7 @@ jobs:
 
     # Requisito 1: Validación estática de sintaxis y buenas prácticas sobre el Dockerfile y manifiestos (linters)
     - name: Lint Dockerfile
-      uses: jbergstroem/hadolint-action@v4
+      uses: jbergstroem/hadolint-action@v3
       with:
         dockerfile: Dockerfile
 
