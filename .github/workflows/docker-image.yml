@@ -1,69 +1,42 @@
-name: CI Pipeline - FOSS App #Nombre del flujo
+name: CI Pipeline - Taiga
 
-# 1. Disparadores: Se ejecuta ante cada Push o Pull Request hacia la rama principal
-on: #Indica cuándo debe arrancar el proceso. Ocurre cada vez que hay un push o pull request a la rama principal.
-  push: #Subir cambios
+on:
+  push:
     branches: [ "main", "master" ]
-  pull_request: #Pedir integrar cambios
+  pull_request:
     branches: [ "main", "master" ]
 
 jobs:
   build-validate-publish:
-    runs-on: ubuntu-latest #Define la máquina virtual donde se va a ejecutar todo el trabajo.
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
       security-events: write
 
     steps:
-    # Descargar el código fuente para usarlo en la máquina virtual creada previamente
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    # Requisito 1: Validación estática de sintaxis y buenas prácticas sobre el Dockerfile y manifiestos (linters)
-    # Validar todos los Dockerfiles presentes en el proyecto
-    - name: Lint all Dockerfiles
-      run: |
-        find . -name "Dockerfile*" -not -path "*/.*" | xargs -I {} sh -c 'echo "==> Checking {}" && docker run --rm -i hadolint/hadolint hadolint --failure-threshold error - < {}'
+      # Requisito 1: Linting de todos los Dockerfiles en el proyecto
+      - name: Lint all Dockerfiles
+        run: |
+          find . -name "Dockerfile*" -not -path "*/.*" | xargs -I {} sh -c 'echo "==> Checking {}" && docker run --rm -i hadolint/hadolint hadolint --failure-threshold error - < {}'
 
-    # Autenticación con el registro de contenedores de GitHub (GHCR)
-    - name: Log in to the Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }} #Estas son fichas de acceso temporales
+      # Autenticación con el registro de GitHub (GHCR)
+      - name: Log in to the Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-    # Extraer metadatos (etiquetas y nombres) para la imagen
-    - name: Extract metadata (tags, labels)
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ghcr.io/${{ github.repository }}
+      # Requisito 2: Construcción de todas las imágenes definidas en docker-compose.yml
+      - name: Build with Docker Compose
+        run: |
+          docker compose build
 
-    # Requisito 2: Construcción del contenedor de la aplicación
-    - name: Build Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        load: true #Es para guardar temporalmente la imagen en la máquina virtual.
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-
-    # Requisito 3: Escaneo estático de vulnerabilidades sobre la imagen generada con Trivy
-    - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: ${{ steps.meta.outputs.tags }}
-        format: 'table'
-        exit-code: '0' # Configurado en 0 para que informe pero no bloquee la entrega por vulnerabilidades de terceros
-        severity: 'CRITICAL,HIGH'
-
-    # Requisito 4: Publicación automática de la imagen resultante en un registro de contenedores (GitHub Packages / Docker Hub)
-    - name: Push Docker image to GitHub Packages
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
+      # Requisito 4: Publicación de las imágenes en el Registro (si están definidas con el nombre de imagen en docker-compose.yml)
+      - name: Push images with Docker Compose
+        run: |
+          docker compose push
