@@ -24,7 +24,7 @@ jobs:
     # Validar todos los Dockerfiles presentes en el proyecto
     - name: Lint all Dockerfiles
       run: |
-        find . -name "Dockerfile*" -not -path "*/.*" | xargs -I {} sh -c 'echo "==> Checking {}" && docker run --rm -i hadolint/hadolint < {}'
+        find . -name "Dockerfile*" -not -path "*/.*" | xargs -I {} sh -c 'echo "==> Checking {}" && docker run --rm -i hadolint/hadolint hadolint --failure-threshold error - < {}'
 
     # Autenticación con el registro de contenedores de GitHub (GHCR)
     - name: Log in to the Container Registry
