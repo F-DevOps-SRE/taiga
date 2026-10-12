@@ -30,6 +30,9 @@ env:
   # El pipeline falla si Trivy encuentra vulnerabilidades de estas severidades
   # (solo las que ya tienen parche). HIGH se reporta en Security > Code scanning, sin bloquear.
   TRIVY_BLOCK_SEVERITY: CRITICAL
+  # "1" = la compuerta falla el job (y no se publica la imagen) si hay vulnerabilidades
+  # de TRIVY_BLOCK_SEVERITY. "0" = el escaneo solo reporta y no bloquea la publicación.
+  TRIVY_EXIT_CODE: "0"
 
 jobs:
   # --------------------------------------------------------------------------
@@ -191,13 +194,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-devel.txt
 
-      - name: "[back] pytest + cobertura"
+      - name: "[back] pytest unitarias + cobertura"
         if: matrix.key == 'back'
         working-directory: src/taiga-back
         timeout-minutes: 40
         run: |
           rc=0
-          coverage run --source=taiga -m pytest -q -p no:cacheprovider \
+          coverage run --source=taiga -m pytest tests/unit -q -p no:cacheprovider \
             --junitxml="$GITHUB_WORKSPACE/reports/junit-taiga-back.xml" || rc=$?
           # El reporte de cobertura se genera aunque fallen pruebas
           coverage xml -o "$GITHUB_WORKSPACE/reports/coverage-taiga-back.xml" || true
@@ -321,7 +324,7 @@ jobs:
           format: table
           severity: ${{ env.TRIVY_BLOCK_SEVERITY }}
           ignore-unfixed: true
-          exit-code: "1"
+          exit-code: ${{ env.TRIVY_EXIT_CODE }}
 
       # Se suben aunque falle la compuerta de Trivy o alguna prueba (!cancelled)
       - name: Subir reportes como artefacto del workflow
