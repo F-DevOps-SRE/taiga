@@ -7,7 +7,8 @@ name: CI Pipeline - Taiga
 #                              1. pruebas unitarias del componente
 #                              2. build de la imagen  (docker-compose.build.yaml)
 #                              3. escaneo Trivy sobre la imagen construida
-#                              4. publicación en GHCR (solo push a la rama por defecto)
+#                              4. reportes como artefacto (JUnit, cobertura, Trivy, SBOM)
+#                              5. publicación en GHCR (solo push a la rama por defecto)
 
 on:
   push:
@@ -147,6 +148,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Preparar carpeta de reportes
+        run: mkdir -p reports
+
       - name: Resolver coordenadas de la imagen
         run: |
           {
@@ -187,11 +191,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-devel.txt
 
-      - name: "[back] pytest"
+      - name: "[back] pytest + cobertura"
         if: matrix.key == 'back'
         working-directory: src/taiga-back
         timeout-minutes: 40
-        run: pytest -q -p no:cacheprovider
+        run: |
+          rc=0
+          coverage run --source=taiga -m pytest -q -p no:cacheprovider \
+            --junitxml="$GITHUB_WORKSPACE/reports/junit-taiga-back.xml" || rc=$?
+          # El reporte de cobertura se genera aunque fallen pruebas
+          coverage xml -o "$GITHUB_WORKSPACE/reports/coverage-taiga-back.xml" || true
+          coverage report | tail -n 3 || true
+          exit "$rc"
 
       # taiga-front: Karma + Mocha en Chrome headless (npm run ci:test = gulp deploy + karma)
       - name: "[front] Node 16"
@@ -247,7 +258,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt pytest pytest-cov hypothesis
-          pytest -v --cov .
+          pytest -v --cov . \
+            --cov-report=term \
+            --cov-report="xml:$GITHUB_WORKSPACE/reports/coverage-taiga-protected.xml" \
+            --junitxml="$GITHUB_WORKSPACE/reports/junit-taiga-protected.xml"
 
       # ------------------------------- Construcción -------------------------------
       - name: Set up Docker Buildx
@@ -270,7 +284,7 @@ jobs:
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.name }}:${{ env.IMAGE_TAG }}
           format: sarif
-          output: trivy-${{ matrix.name }}.sarif
+          output: reports/trivy-${{ matrix.name }}.sarif
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "0"
@@ -280,8 +294,25 @@ jobs:
         continue-on-error: true # requiere Code Scanning habilitado en el repo
         uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: trivy-${{ matrix.name }}.sarif
+          sarif_file: reports/trivy-${{ matrix.name }}.sarif
           category: trivy-${{ matrix.name }}
+
+      - name: Trivy - reporte legible (CRITICAL, HIGH y MEDIUM, incluye sin parche)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.name }}:${{ env.IMAGE_TAG }}
+          format: table
+          output: reports/trivy-${{ matrix.name }}.txt
+          severity: CRITICAL,HIGH,MEDIUM
+          exit-code: "0"
+
+      - name: SBOM (CycloneDX)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.name }}:${{ env.IMAGE_TAG }}
+          format: cyclonedx
+          output: reports/sbom-${{ matrix.name }}.cdx.json
+          exit-code: "0"
 
       - name: Trivy - compuerta (falla si hay ${{ env.TRIVY_BLOCK_SEVERITY }} con parche)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -291,6 +322,16 @@ jobs:
           severity: ${{ env.TRIVY_BLOCK_SEVERITY }}
           ignore-unfixed: true
           exit-code: "1"
+
+      # Se suben aunque falle la compuerta de Trivy o alguna prueba (!cancelled)
+      - name: Subir reportes como artefacto del workflow
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports-${{ matrix.name }}
+          path: reports/
+          retention-days: 30
+          if-no-files-found: warn
 
       # ------------------------------- Publicación -------------------------------
       - name: Login en GHCR
