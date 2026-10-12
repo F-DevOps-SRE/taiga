@@ -1,0 +1,60 @@
+# ----------------------------------------------------------------------------
+# docker-compose.build.yaml  ->  SOLO construcción de imágenes (sin runtime)
+#
+# - No define base de datos, RabbitMQ, volúmenes, redes ni gateway: esos son
+#   servicios de ejecución y viven en docker-compose.yml.
+# - Una entrada por imagen. En docker-compose.yml, `taiga-back` y `taiga-async`
+#   comparten el mismo build; aquí se construye UNA sola vez.
+# - El gateway (nginx) no se construye: usa la imagen oficial + nginx.conf montado.
+#
+# Uso local:
+#   docker compose -f docker-compose.build.yaml build              # todo
+#   docker compose -f docker-compose.build.yaml build taiga-front  # un componente
+#
+# Variables (todas con valor por defecto; el workflow las sobrescribe):
+#   IMAGE_REGISTRY   registro                          (ghcr.io)
+#   IMAGE_NAMESPACE  usuario/organización en MINÚSCULAS (local)
+#   IMAGE_TAG        tag de la imagen                  (dev)
+#   IMAGE_SOURCE     URL del repo (vincula el paquete en GHCR con el repo)
+#   IMAGE_REVISION   SHA del commit
+# ----------------------------------------------------------------------------
+x-labels: &labels
+  org.opencontainers.image.source: ${IMAGE_SOURCE:-}
+  org.opencontainers.image.revision: ${IMAGE_REVISION:-}
+
+services:
+  taiga-back:
+    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-local}/taiga-back:${IMAGE_TAG:-dev}
+    build:
+      context: ./src/taiga-back
+      dockerfile: Dockerfile
+      labels:
+        <<: *labels
+        org.opencontainers.image.title: taiga-back
+
+  taiga-front:
+    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-local}/taiga-front:${IMAGE_TAG:-dev}
+    build:
+      context: ./src/taiga-front
+      dockerfile: Dockerfile
+      labels:
+        <<: *labels
+        org.opencontainers.image.title: taiga-front
+
+  taiga-events:
+    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-local}/taiga-events:${IMAGE_TAG:-dev}
+    build:
+      context: ./src/taiga-events
+      dockerfile: Dockerfile
+      labels:
+        <<: *labels
+        org.opencontainers.image.title: taiga-events
+
+  taiga-protected:
+    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:-local}/taiga-protected:${IMAGE_TAG:-dev}
+    build:
+      context: ./src/taiga-protected
+      dockerfile: Dockerfile
+      labels:
+        <<: *labels
+        org.opencontainers.image.title: taiga-protected

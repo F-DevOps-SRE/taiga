@@ -1,0 +1,12 @@
+# Configuración de hadolint (linter de Dockerfiles). El workflow falla con
+# cualquier hallazgo de severidad >= warning que no esté en `ignored`.
+failure-threshold: warning
+
+ignored:
+  # Fijar versiones de paquetes apt en imágenes *-slim/bullseye es frágil: la
+  # versión exacta desaparece del repositorio y rompe el build sin cambios en el código.
+  - DL3008
+  # `pip install --upgrade pip wheel` en la etapa builder (efímera, no llega a runtime).
+  - DL3013
+  # HEALTHCHECK usa `curl ... || exit 1` (forma shell) a propósito.
+  - DL3025

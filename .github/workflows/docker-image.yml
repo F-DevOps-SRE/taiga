@@ -1,55 +1,318 @@
 name: CI Pipeline - Taiga
 
-on: #Indica cuándo debe arrancar el proceso. Ocurre cada vez que hay un push o pull request a la rama principal
-  push: #Subir cambios
-    branches: [ "main", "master" ]
-  pull_request: #Pedir integrar cambios
-    branches: [ "main", "master" ]
+# Pipeline por componente: solo se prueba, construye, escanea y publica lo que cambió.
+#
+#   lint ─────────────┐
+#   changes ──────────┴─► build (matriz: un job por componente modificado)
+#                              1. pruebas unitarias del componente
+#                              2. build de la imagen  (docker-compose.build.yaml)
+#                              3. escaneo Trivy sobre la imagen construida
+#                              4. publicación en GHCR (solo push a la rama por defecto)
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+    branches: ["main", "master"]
+  workflow_dispatch: # ejecución manual: fuerza todos los componentes
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_REGISTRY: ghcr.io # lo consume docker-compose.build.yaml
+  # El pipeline falla si Trivy encuentra vulnerabilidades de estas severidades
+  # (solo las que ya tienen parche). HIGH se reporta en Security > Code scanning, sin bloquear.
+  TRIVY_BLOCK_SEVERITY: CRITICAL
 
 jobs:
-  build-validate-publish:
-    runs-on: ubuntu-latest #Define la máquina virtual donde se va a ejecutar todo el trabajo.
+  # --------------------------------------------------------------------------
+  # 1) Validación estática: Dockerfiles, manifiestos (compose) y workflows
+  #    Es barata (segundos), por eso corre siempre sobre todo el repo.
+  # --------------------------------------------------------------------------
+  lint:
+    name: Lint (Dockerfiles, compose, workflows)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install hadolint and actionlint
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl -fsSL -o "$RUNNER_TEMP/bin/hadolint" \
+            https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-linux-x86_64
+          chmod +x "$RUNNER_TEMP/bin/hadolint"
+          curl -fsSL https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            | tar -xz -C "$RUNNER_TEMP/bin" actionlint
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Hadolint - todos los Dockerfiles
+        run: |
+          rc=0
+          while IFS= read -r -d '' f; do
+            echo "==> $f"
+            hadolint --config .hadolint.yaml "$f" || rc=1
+          done < <(find src -name 'Dockerfile*' -not -path '*/node_modules/*' -print0)
+          exit "$rc"
+
+      - name: Validar docker-compose.build.yaml
+        run: docker compose -f docker-compose.build.yaml config --quiet
+
+      - name: Actionlint - workflows
+        run: actionlint
+
+  # --------------------------------------------------------------------------
+  # 2) Detectar qué componentes cambiaron
+  # --------------------------------------------------------------------------
+  changes:
+    name: Detectar cambios
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
-      packages: write
-      security-events: write
+      pull-requests: read
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      any: ${{ steps.matrix.outputs.any }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Filtrar por rutas
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            back:
+              - 'src/taiga-back/**'
+            front:
+              - 'src/taiga-front/**'
+            events:
+              - 'src/taiga-events/**'
+            protected:
+              - 'src/taiga-protected/**'
+            shared:
+              - 'docker-compose.build.yaml'
+              - '.github/workflows/docker-image.yml'
+              - '.hadolint.yaml'
+
+      - name: Calcular matriz de componentes
+        id: matrix
+        env:
+          CHANGES: ${{ steps.filter.outputs.changes }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          all='[{"key":"back","name":"taiga-back"},{"key":"front","name":"taiga-front"},{"key":"events","name":"taiga-events"},{"key":"protected","name":"taiga-protected"}]'
+          # Ejecución manual o cambio en archivos compartidos (compose/workflow/hadolint) => todo
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] || jq -e 'index("shared")' <<<"$CHANGES" >/dev/null; then
+            selected="$all"
+          else
+            selected=$(jq -c --argjson c "$CHANGES" 'map(select(.key as $k | $c | index($k)))' <<<"$all")
+          fi
+          echo "Componentes a construir: $selected"
+          echo "matrix=$selected" >> "$GITHUB_OUTPUT"
+          echo "any=$(jq 'length > 0' <<<"$selected")" >> "$GITHUB_OUTPUT"
+
+  # --------------------------------------------------------------------------
+  # 3) Pruebas -> build -> escaneo -> publicación, solo para lo que cambió
+  # --------------------------------------------------------------------------
+  build:
+    name: ${{ matrix.name }}
+    needs: [lint, changes]
+    if: needs.changes.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write # publicar en GHCR
+      security-events: write # subir SARIF de Trivy
+    env:
+      # Publicar solo en push/dispatch sobre la rama por defecto; nunca en pull requests
+      PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    strategy:
+      fail-fast: false # que un componente roto no cancele a los demás
+      matrix:
+        include: ${{ fromJSON(needs.changes.outputs.matrix) }}
 
     steps:
-      # Descargar el código fuente para usarlo en la máquina virtual creada previamente
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v7
 
-      - name: Create dummy .env file
+      - name: Resolver coordenadas de la imagen
         run: |
-          cp .env.example .env 2>/dev/null || touch .env
+          {
+            echo "IMAGE_NAMESPACE=${GITHUB_REPOSITORY_OWNER,,}"
+            echo "IMAGE_TAG=sha-${GITHUB_SHA::7}"
+            echo "IMAGE_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+            echo "IMAGE_REVISION=${GITHUB_SHA}"
+          } >> "$GITHUB_ENV"
 
-      # Requisito 1: Validación estática de sintaxis y buenas prácticas sobre el Dockerfile y manifiestos (linters)
-      - name: Lint all Dockerfiles
-        run: |
-          find . -name "Dockerfile*" -not -path "*/.*" | xargs -I {} sh -c 'echo "==> Checking {}" && docker run --rm -i hadolint/hadolint hadolint --failure-threshold error - < {}'
-
-      # Autenticación con el registro de contenedores de GitHub (GHCR)
-      - name: Log in to the Container Registry
-        uses: docker/login-action@v3
+      # ---------------------------- Pruebas unitarias ----------------------------
+      # taiga-back: pytest + PostgreSQL real. tests/config.py ya detecta GITHUB_WORKFLOW
+      # y usa postgres/postgres@localhost:5432, base "taiga".
+      - name: "[back] Python 3.11"
+        if: matrix.key == 'back'
+        uses: actions/setup-python@v7
         with:
-          registry: ghcr.io
+          python-version: "3.11" # misma versión que el Dockerfile
+          cache: pip
+          cache-dependency-path: |
+            src/taiga-back/requirements.txt
+            src/taiga-back/requirements-devel.txt
+
+      - name: "[back] Dependencias del sistema y PostgreSQL"
+        if: matrix.key == 'back'
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libpq-dev libmagic1 gettext
+          docker run -d --name taiga-test-db -p 5432:5432 \
+            -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=taiga \
+            postgres:15-alpine
+          until docker exec taiga-test-db pg_isready -U postgres -d taiga; do sleep 2; done
+
+      - name: "[back] Instalar dependencias"
+        if: matrix.key == 'back'
+        working-directory: src/taiga-back
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-devel.txt
+
+      - name: "[back] pytest"
+        if: matrix.key == 'back'
+        working-directory: src/taiga-back
+        timeout-minutes: 40
+        run: pytest -q -p no:cacheprovider
+
+      # taiga-front: Karma + Mocha en Chrome headless (npm run ci:test = gulp deploy + karma)
+      - name: "[front] Node 16"
+        if: matrix.key == 'front'
+        uses: actions/setup-node@v7
+        with:
+          node-version: "16.19.1" # misma versión que el Dockerfile
+          cache: npm
+          cache-dependency-path: src/taiga-front/package-lock.json
+
+      - name: "[front] Instalar dependencias"
+        if: matrix.key == 'front'
+        working-directory: src/taiga-front
+        run: npm ci
+
+      - name: "[front] Karma (Chrome headless)"
+        if: matrix.key == 'front'
+        working-directory: src/taiga-front
+        timeout-minutes: 30
+        env:
+          CHROME_BIN: /usr/bin/google-chrome
+        run: npm run ci:test
+
+      # taiga-events: el componente NO trae pruebas unitarias; se hace verificación
+      # de instalación (npm ci) y de sintaxis de todos los fuentes.
+      - name: "[events] Node 16"
+        if: matrix.key == 'events'
+        uses: actions/setup-node@v7
+        with:
+          node-version: "16.19.1"
+          cache: npm
+          cache-dependency-path: src/taiga-events/package-lock.json
+
+      - name: "[events] Instalación y chequeo de sintaxis"
+        if: matrix.key == 'events'
+        working-directory: src/taiga-events
+        run: |
+          npm ci --omit=dev
+          find src -name '*.js' -print0 | xargs -0 -n1 node --check
+
+      # taiga-protected: pytest + hypothesis (dependencias de test según su Pipfile)
+      - name: "[protected] Python 3.11"
+        if: matrix.key == 'protected'
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: src/taiga-protected/requirements.txt
+
+      - name: "[protected] pytest"
+        if: matrix.key == 'protected'
+        working-directory: src/taiga-protected
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest pytest-cov hypothesis
+          pytest -v --cov .
+
+      # ------------------------------- Construcción -------------------------------
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build ${{ matrix.name }}
+        uses: docker/bake-action@v7
+        with:
+          source: .
+          files: docker-compose.build.yaml
+          targets: ${{ matrix.name }}
+          load: true # queda en el daemon local para escanearlo antes de publicar
+          set: |
+            *.cache-from=type=gha,scope=${{ matrix.name }}
+            *.cache-to=type=gha,mode=max,scope=${{ matrix.name }}
+
+      # -------------------------------- Escaneo --------------------------------
+      - name: Trivy - reporte SARIF (CRITICAL y HIGH, no bloquea)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.name }}:${{ env.IMAGE_TAG }}
+          format: sarif
+          output: trivy-${{ matrix.name }}.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "0"
+
+      - name: Subir reporte a Code Scanning
+        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+        continue-on-error: true # requiere Code Scanning habilitado en el repo
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-${{ matrix.name }}.sarif
+          category: trivy-${{ matrix.name }}
+
+      - name: Trivy - compuerta (falla si hay ${{ env.TRIVY_BLOCK_SEVERITY }} con parche)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.name }}:${{ env.IMAGE_TAG }}
+          format: table
+          severity: ${{ env.TRIVY_BLOCK_SEVERITY }}
+          ignore-unfixed: true
+          exit-code: "1"
+
+      # ------------------------------- Publicación -------------------------------
+      - name: Login en GHCR
+        if: env.PUBLISH == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }} #Estas son fichas de acceso temporales
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Requisito 2: Construcción del contenedor de la aplicación
-      - name: Build with Docker Compose
+      - name: Publicar imagen (la misma que se escaneó)
+        if: env.PUBLISH == 'true'
+        env:
+          NAME: ${{ matrix.name }}
         run: |
-          docker compose build
-
-      # Requisito 3: Escaneo estático de vulnerabilidades con Trivy sobre cada imagen generada
-      - name: Run Trivy vulnerability scanner
-        run: |
-          for img in $(docker compose config --images); do
-            echo "==> Escaneando imagen: $img"
-            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest image --exit-code 0 --severity CRITICAL,HIGH "$img"
-          done
-
-      # Requisito 4: Publicación automática de la imagen resultante en un registro de contenedores (GitHub Packages / Docker Hub)
-      - name: Push images with Docker Compose
-        run: |
-          docker compose push
+          set -euo pipefail
+          image="${REGISTRY}/${IMAGE_NAMESPACE}/${NAME}"
+          docker push "${image}:${IMAGE_TAG}"
+          docker tag "${image}:${IMAGE_TAG}" "${image}:latest"
+          docker push "${image}:latest"
+          {
+            echo "### Imagen publicada: \`${NAME}\`"
+            echo "- \`${image}:${IMAGE_TAG}\`"
+            echo "- \`${image}:latest\`"
+          } >> "$GITHUB_STEP_SUMMARY"
