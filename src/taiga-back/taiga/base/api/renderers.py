@@ -41,7 +41,7 @@ REST framework also provides an HTML renderer the renders the browsable API.
 """
 
 from django.core.exceptions import ImproperlyConfigured
-from django.http.multipartparser import parse_header
+from django.utils.http import parse_header_parameters
 from django.template import RequestContext, loader, Template
 from django.test.client import encode_multipart
 import six
@@ -90,7 +90,7 @@ class JSONRenderer(BaseRenderer):
         if accepted_media_type:
             # If the media type looks like "application/json; indent=4",
             # then pretty print the result.
-            base_media_type, params = parse_header(accepted_media_type.encode("ascii"))
+            base_media_type, params = parse_header_parameters(accepted_media_type)
             indent = params.get("indent", indent)
             try:
                 indent = max(min(int(indent), 8), 0)

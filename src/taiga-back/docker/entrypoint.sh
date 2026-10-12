@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
 cd /taiga-back
 
@@ -17,7 +17,7 @@ chown -R taiga:taiga /taiga-back/static /taiga-back/media
 
 echo "[Taiga] Starting Gunicorn..."
 
-exec gosu taiga gunicorn taiga.wsgi:application \
+exec su-exec taiga gunicorn taiga.wsgi:application \
     --name taiga_api \
     --bind 0.0.0.0:8000 \
     --workers "${GUNICORN_WORKERS:-3}" \

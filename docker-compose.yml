@@ -106,7 +106,7 @@ services:
       context: ./src/taiga-back
       dockerfile: Dockerfile
     environment: *backend-environment
-    entrypoint: ["gosu", "taiga", "celery"]
+    entrypoint: ["su-exec", "taiga", "celery"]
     command:
       ["-A", "taiga.celery", "worker", "-B", "--concurrency", "2", "-l", "INFO"]
     volumes:
@@ -167,7 +167,7 @@ services:
   # Single public entry point
   # ------------------------------------------------------------
   taiga-gateway:
-    image: nginx:1.27-alpine
+    image: nginx:1.30-alpine
     ports:
       - "9000:80"
     volumes:

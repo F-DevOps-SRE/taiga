@@ -10,6 +10,7 @@ from django.conf import settings
 import hashlib
 import functools
 import bleach
+from bleach.css_sanitizer import CSSSanitizer
 
 # BEGIN PATCH
 import html5lib
@@ -45,19 +46,29 @@ from .extensions.target_link import TargetBlankLinkExtension
 from .extensions.refresh_attachment import RefreshAttachmentExtension
 
 # Bleach configuration
-bleach.ALLOWED_TAGS += ["p", "table", "thead", "tbody", "th", "tr", "td", "h1",
-                        "h2", "h3", "h4", "h5", "h6", "div", "pre", "span",
-                        "hr", "dl", "dt", "dd", "sup", "img", "del", "br",
-                        "ins", "input", "label"]
+ALLOWED_TAGS = set(bleach.ALLOWED_TAGS) | {
+    "p", "table", "thead", "tbody", "th", "tr", "td", "h1",
+    "h2", "h3", "h4", "h5", "h6", "div", "pre", "span",
+    "hr", "dl", "dt", "dd", "sup", "img", "del", "br",
+    "ins", "input", "label"}
 
-bleach.ALLOWED_STYLES.append("background")
+CSS_SANITIZER = CSSSanitizer(allowed_css_properties=["background"])
 
-bleach.ALLOWED_ATTRIBUTES["a"] = ["href", "title", "alt", "target"]
-bleach.ALLOWED_ATTRIBUTES["img"] = ["alt", "src"]
-bleach.ALLOWED_ATTRIBUTES["input"] = ["type", "checked"]
-bleach.ALLOWED_ATTRIBUTES["*"] = ["class", "style", "id"]
+ALLOWED_ATTRIBUTES = dict(bleach.ALLOWED_ATTRIBUTES)
+ALLOWED_ATTRIBUTES["a"] = ["href", "title", "alt", "target"]
+ALLOWED_ATTRIBUTES["img"] = ["alt", "src"]
+ALLOWED_ATTRIBUTES["input"] = ["type", "checked"]
+ALLOWED_ATTRIBUTES["*"] = ["class", "style", "id"]
 
 ALLOWED_PROTOCOLS = ["http", "https", "ftp", "mailto"]
+
+
+def _clean(html):
+    return bleach.clean(html,
+                        tags=ALLOWED_TAGS,
+                        attributes=ALLOWED_ATTRIBUTES,
+                        css_sanitizer=CSS_SANITIZER,
+                        protocols=ALLOWED_PROTOCOLS)
 
 
 def _make_extensions_list(project=None):
@@ -128,12 +139,12 @@ def _get_markdown(project):
 @cache_by_sha
 def render(project, text):
     md = _get_markdown(project)
-    return bleach.clean(md.convert(text), protocols=ALLOWED_PROTOCOLS)
+    return _clean(md.convert(text))
 
 
 def render_and_extract(project, text):
     md = _get_markdown(project)
-    result = bleach.clean(md.convert(text), protocols=ALLOWED_PROTOCOLS)
+    result = _clean(md.convert(text))
     return (result, md.extracted_data)
 
 

@@ -83,7 +83,6 @@ LOGIN_URL = "/auth/login/"
 USE_TZ = True
 
 USE_I18N = True
-USE_L10N = True
 # Language code for this installation. All choices can be found here:
 # http://www.i18nguy.com/unicode/language-identifiers.html
 LANGUAGE_CODE = 'en-us'
@@ -242,7 +241,14 @@ STATICFILES_DIRS = (
 )
 
 # Default storage
-DEFAULT_FILE_STORAGE = "taiga.base.storage.FileSystemStorage"
+STORAGES = {
+    "default": {
+        "BACKEND": "taiga.base.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
 
 FILE_UPLOAD_PERMISSIONS = 0o644
 

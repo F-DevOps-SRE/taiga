@@ -32,7 +32,7 @@ env:
   TRIVY_BLOCK_SEVERITY: CRITICAL
   # "1" = la compuerta falla el job (y no se publica la imagen) si hay vulnerabilidades
   # de TRIVY_BLOCK_SEVERITY. "0" = el escaneo solo reporta y no bloquea la publicación.
-  TRIVY_EXIT_CODE: "0"
+  TRIVY_EXIT_CODE: "1"
 
 jobs:
   # --------------------------------------------------------------------------
@@ -166,11 +166,11 @@ jobs:
       # ---------------------------- Pruebas unitarias ----------------------------
       # taiga-back: pytest + PostgreSQL real. tests/config.py ya detecta GITHUB_WORKFLOW
       # y usa postgres/postgres@localhost:5432, base "taiga".
-      - name: "[back] Python 3.11"
+      - name: "[back] Python 3.14"
         if: matrix.key == 'back'
         uses: actions/setup-python@v7
         with:
-          python-version: "3.11" # misma versión que el Dockerfile
+          python-version: "3.14" # misma versión que el Dockerfile
           cache: pip
           cache-dependency-path: |
             src/taiga-back/requirements.txt
@@ -231,11 +231,11 @@ jobs:
 
       # taiga-events: el componente NO trae pruebas unitarias; se hace verificación
       # de instalación (npm ci) y de sintaxis de todos los fuentes.
-      - name: "[events] Node 16"
+      - name: "[events] Node 24"
         if: matrix.key == 'events'
         uses: actions/setup-node@v7
         with:
-          node-version: "16.19.1"
+          node-version: "24" # misma versión que el Dockerfile
           cache: npm
           cache-dependency-path: src/taiga-events/package-lock.json
 
@@ -247,11 +247,11 @@ jobs:
           find src -name '*.js' -print0 | xargs -0 -n1 node --check
 
       # taiga-protected: pytest + hypothesis (dependencias de test según su Pipfile)
-      - name: "[protected] Python 3.11"
+      - name: "[protected] Python 3.14"
         if: matrix.key == 'protected'
         uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
+          python-version: "3.14" # misma versión que el Dockerfile
           cache: pip
           cache-dependency-path: src/taiga-protected/requirements.txt
 

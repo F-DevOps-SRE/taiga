@@ -73,8 +73,8 @@ MEDIA_URL = f"{TAIGA_URL}/media/"
 STATIC_ROOT = os.getenv("STATIC_ROOT", os.path.join(BASE_DIR, "static"))
 STATIC_URL = f"{TAIGA_URL}/static/"
 
-DEFAULT_FILE_STORAGE = "taiga_contrib_protected.storage.ProtectedFileSystemStorage"
-THUMBNAIL_DEFAULT_STORAGE = DEFAULT_FILE_STORAGE
+# easy-thumbnails falls back to the default storage, so thumbnails are protected too.
+STORAGES["default"]["BACKEND"] = "taiga_contrib_protected.storage.ProtectedFileSystemStorage"
 
 # ---------------------------------------------------------------------------
 # Email
@@ -130,4 +130,4 @@ PUBLIC_REGISTER_ENABLED = env_bool("PUBLIC_REGISTER_ENABLED", True)
 ENABLE_TELEMETRY = env_bool("ENABLE_TELEMETRY", False)
 
 # The default project already has the contrib package installed in the image.
-# The plugin itself is enabled through DEFAULT_FILE_STORAGE above.
+# The plugin itself is enabled through STORAGES above.

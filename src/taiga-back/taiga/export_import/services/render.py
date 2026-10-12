@@ -46,7 +46,6 @@ def render_project(project, outfile, chunk_size=8190):
 
             if field_name == "issues":
                 value = value.select_related('severity', 'priority', 'type')
-            value = value.prefetch_related('history_entry', 'attachments')
 
             outfile.write('"{}": [\n'.format(field_name).encode())
 

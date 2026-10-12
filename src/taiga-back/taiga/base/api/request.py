@@ -43,7 +43,7 @@ The wrapped request then offers a richer API, in particular :
 """
 from django.conf import settings
 from django.http import QueryDict
-from django.http.multipartparser import parse_header
+from django.utils.http import parse_header_parameters
 from django.utils.datastructures import MultiValueDict
 import six
 
@@ -57,7 +57,7 @@ def is_form_media_type(media_type):
     """
     Return True if the media type is a valid form media type.
     """
-    base_media_type, params = parse_header(media_type.encode(HTTP_HEADER_ENCODING))
+    base_media_type, params = parse_header_parameters(media_type)
     return (base_media_type == "application/x-www-form-urlencoded" or
             base_media_type == "multipart/form-data")
 

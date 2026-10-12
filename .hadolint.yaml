@@ -3,9 +3,13 @@
 failure-threshold: warning
 
 ignored:
-  # Fijar versiones de paquetes apt en imágenes *-slim/bullseye es frágil: la
-  # versión exacta desaparece del repositorio y rompe el build sin cambios en el código.
+  # Fijar versiones de paquetes apt/apk es frágil: la versión exacta desaparece
+  # del repositorio y rompe el build sin cambios en el código.
   - DL3008
+  - DL3018
+  # `apk upgrade` se usa a propósito: aplica los parches de seguridad del sistema
+  # base publicados después de la imagen oficial (hallazgos de Trivy con parche).
+  - DL3017
   # `pip install --upgrade pip wheel` en la etapa builder (efímera, no llega a runtime).
   - DL3013
   # HEALTHCHECK usa `curl ... || exit 1` (forma shell) a propósito.

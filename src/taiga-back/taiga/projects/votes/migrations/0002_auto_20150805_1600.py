@@ -8,7 +8,9 @@
 from __future__ import unicode_literals
 
 from django.db import models, migrations
-from django.utils.timezone import utc
+from datetime import timezone
+
+utc = timezone.utc
 from django.conf import settings
 import datetime
 

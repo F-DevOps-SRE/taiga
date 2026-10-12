@@ -1,4 +1,4 @@
 -i https://pypi.org/simple
-gunicorn==19.9.0
-python-dotenv==0.10.3
-werkzeug==0.15.6
+gunicorn==26.2.0
+python-dotenv==1.2.4
+werkzeug==3.1.9

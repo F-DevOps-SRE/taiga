@@ -15,7 +15,10 @@ RUN npx gulp deploy
 RUN cp conf/conf.example.json dist/conf.json \
     && node -e "const fs=require('fs'); const p='dist/conf.json'; const c=JSON.parse(fs.readFileSync(p)); c.api='http://localhost:9000/api/v1/'; c.eventsUrl='ws://localhost:9000/events'; c.baseHref='/'; fs.writeFileSync(p, JSON.stringify(c,null,2));"
 
-FROM nginx:1.27-alpine
+FROM nginx:1.30-alpine
+
+# Parches de seguridad del sistema base publicados después de la imagen oficial.
+RUN apk upgrade --no-cache
 
 COPY --from=builder /app/dist/ /usr/share/nginx/html/
 

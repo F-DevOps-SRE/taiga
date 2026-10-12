@@ -45,10 +45,9 @@ class ExpiredSigner(signing.TimestampSigner):
         self.salt = "django.core.signing.TimestampSigner"
 
     def timestamp(self):
-        from django.utils import baseconv
         import time
         time_in_the_far_past = int(time.time()) - 24*60*60*1000
-        return baseconv.base62.encode(time_in_the_far_past)
+        return signing.b62_encode(time_in_the_far_past)
 
 
 def test_get_project_detail(client):
