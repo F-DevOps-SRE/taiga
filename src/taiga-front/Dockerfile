@@ -20,6 +20,7 @@ FROM nginx:1.30-alpine
 # Parches de seguridad del sistema base publicados después de la imagen oficial.
 RUN apk upgrade --no-cache
 
+COPY docker/default.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist/ /usr/share/nginx/html/
 
 EXPOSE 80
