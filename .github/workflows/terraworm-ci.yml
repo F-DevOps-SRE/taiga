@@ -51,6 +51,7 @@ jobs:
       - name: Run Checkov Security Scan
         uses: bridgecrewio/checkov-action@master
         with:
-          directory: ./terraform
+          directory: terraform
           framework: terraform
-          soft_fail: false # Falla el job si hay violaciones críticas no omitidas
+          output_format: cli
+          soft_fail: false
