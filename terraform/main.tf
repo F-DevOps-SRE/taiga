@@ -6,7 +6,7 @@ terraform {
       version = "~> 3.0"
     }
     random = {
-      source = "hashicorp/random"
+      source  = "hashicorp/random"
       version = "~>3.0"
     }
   }
@@ -38,14 +38,14 @@ module "storage" {
 
 # 3. Módulo de Container Apps
 module "container_apps" {
-  source              = "./modules/container_apps"
-  resource_group_name = data.azurerm_resource_group.rg.name
-  location            = data.azurerm_resource_group.rg.location
-  subnet_id           = module.network.subnet_aca_id
+  source               = "./modules/container_apps"
+  resource_group_name  = data.azurerm_resource_group.rg.name
+  location             = data.azurerm_resource_group.rg.location
+  subnet_id            = module.network.subnet_aca_id
   storage_account_name = module.storage.account_name
   storage_account_key  = module.storage.primary_access_key
-  
-  postgres_password   = var.postgres_password
-  rabbitmq_password   = var.rabbitmq_pass
-  taiga_secret_key    = var.taiga_secret_key
+
+  postgres_password = var.postgres_password
+  rabbitmq_password = var.rabbitmq_pass
+  taiga_secret_key  = var.taiga_secret_key
 }
