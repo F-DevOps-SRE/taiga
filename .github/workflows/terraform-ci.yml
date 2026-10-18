@@ -1,4 +1,4 @@
-name: "Workflow de validación estática"
+name: "Terraform CI & Governance Validation"
 
 on:
   push:
@@ -16,27 +16,25 @@ jobs:
         working-directory: ./terraform
 
     steps:
-      # 1. Descargar el código del repositorio
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. Configurar Terraform CLI
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.5.0
 
-      # 3. Formato de código
+      # 1. Formato: Muestra las diferencias exactas si falla
       - name: Terraform Format Check
-        run: terraform fmt -check
+        run: terraform fmt -check -diff
 
-      # 4. Inicializar y Validar sintaxis
+      # 2. Sintaxis: Valida la estructura HCL
       - name: Terraform Init & Validate
         run: |
           terraform init -backend=false
           terraform validate
 
-      # 5. Configurar y Ejecutar TFLint
+      # 3. Linter: Analiza reglas de Azure en formato compacto
       - name: Setup TFLint
         uses: terraform-linters/setup-tflint@v4
         with:
@@ -45,9 +43,9 @@ jobs:
       - name: Run TFLint
         run: |
           tflint --init
-          tflint
+          tflint --format=compact
 
-      # 6. Escaneo de Seguridad con Checkov
+      # 4. Escaneo de Seguridad: Reporte detallado en consola
       - name: Run Checkov Security Scan
         uses: bridgecrewio/checkov-action@master
         with:
