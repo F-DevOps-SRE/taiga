@@ -10,6 +10,15 @@ terraform {
       version = "~>3.0"
     }
   }
+
+  # Estado remoto en Azure Storage. La cuenta (stdevopssre) se creó a mano y no
+  # la administra este Terraform: el estado no puede vivir en lo que él mismo describe.
+  backend "azurerm" {
+    resource_group_name  = "rg-taiga"
+    storage_account_name = "stdevopssre"
+    container_name       = "tfstate"
+    key                  = "taiga.tfstate"
+  }
 }
 
 provider "azurerm" {
@@ -44,8 +53,17 @@ module "container_apps" {
   subnet_id            = module.network.subnet_aca_id
   storage_account_name = module.storage.account_name
   storage_account_key  = module.storage.primary_access_key
+  storage_share_name   = module.storage.share_name
 
   postgres_password = var.postgres_password
   rabbitmq_password = var.rabbitmq_pass
   taiga_secret_key  = var.taiga_secret_key
+
+  # Imágenes publicadas en GHCR (sha-<commit>) y gateway de docker-compose
+  image_registry         = var.image_registry
+  taiga_back_commit      = var.taiga_back_commit
+  taiga_front_commit     = var.taiga_front_commit
+  taiga_events_commit    = var.taiga_events_commit
+  taiga_protected_commit = var.taiga_protected_commit
+  gateway_nginx_conf     = file("${path.root}/../taiga-gateway/nginx.conf")
 }

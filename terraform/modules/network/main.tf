@@ -10,6 +10,20 @@ resource "azurerm_network_security_group" "nsg_aca" {
   name                = "nsg-aca"
   location            = var.location
   resource_group_name = var.resource_group_name
+
+  # Ingress público de Taiga (solo HTTPS). Sin esta regla, la regla por defecto
+  # DenyAllInBound bloquea el tráfico de Internet hacia el environment.
+  security_rule {
+    name                       = "allow-https-inbound"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "443"
+    source_address_prefix      = "Internet"
+    destination_address_prefix = "*"
+  }
 }
 
 # 2. Subred delegada a Azure Container Apps
