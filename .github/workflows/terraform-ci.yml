@@ -142,5 +142,10 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Terraform Apply
-        run: terraform apply tfplan
+      # - name: Terraform Apply
+      #   run: terraform apply tfplan
+
+      # Elimina toda la infraestructura administrada por este estado (no toca
+      # rg-taiga, que es un data source, ni la cuenta del estado stdevopssre).
+      - name: Terraform Destroy
+        run: terraform destroy -auto-approve -input=false -lock-timeout=5m -no-color
