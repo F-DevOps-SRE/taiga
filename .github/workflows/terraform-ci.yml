@@ -1,0 +1,143 @@
+name: "Terraform CI & Governance Validation"
+
+on:
+  push:
+    branches: [ "main", "feature/*" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  validate:
+    name: "Linting & Security Checks"
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./terraform
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.0
+
+      # 1. Formato: Muestra las diferencias exactas si falla
+      - name: Terraform Format Check
+        run: terraform fmt -check -diff
+
+      # 2. Sintaxis: Valida la estructura HCL
+      - name: Terraform Init & Validate
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+      # 3. Linter: Analiza reglas de Azure en formato compacto
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.50.0
+
+      - name: Run TFLint
+        run: |
+          tflint --init
+          tflint --format=compact
+
+      # 4. Escaneo de Seguridad: Reporte detallado en consola
+      - name: Run Checkov Security Scan
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: terraform
+          framework: terraform
+          output_format: cli
+          soft_fail: false
+
+  # --------------------------------------------------------------------------
+  # Plan contra Azure (solo push a main). Todavía NO se aplica.
+  # --------------------------------------------------------------------------
+  plan:
+    name: "Terraform Plan"
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    # Un solo plan a la vez sobre el mismo estado remoto
+    concurrency:
+      group: terraform-state
+      cancel-in-progress: false
+
+    defaults:
+      run:
+        working-directory: ./terraform
+
+    env:
+      TF_IN_AUTOMATION: "true"
+      # Service principal (Contributor sobre rg-taiga): lo usan el provider y el backend
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      TF_VAR_subscription_id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      # Secretos de la aplicación
+      TF_VAR_postgres_password: ${{ secrets.POSTGRES_PASSWORD }}
+      TF_VAR_rabbitmq_pass: ${{ secrets.RABBITMQ_PASS }}
+      TF_VAR_taiga_secret_key: ${{ secrets.TAIGA_SECRET_KEY }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # historial completo para buscar el commit de cada imagen
+
+      # Para cada componente se toma el commit más reciente de main que tenga su
+      # imagen publicada en GHCR (sha-<commit[0:7]>). Si el build de este push aún
+      # no termina, se usa la imagen anterior.
+      - name: Resolver commits de las imágenes
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          mapfile -t commits < <(git rev-list --first-parent --max-count=500 HEAD)
+          echo "TF_VAR_image_registry=ghcr.io/${owner}" >> "$GITHUB_ENV"
+          echo "### Imágenes del plan" >> "$GITHUB_STEP_SUMMARY"
+
+          for name in taiga-back taiga-front taiga-events taiga-protected; do
+            token=$(curl -fsSL "https://ghcr.io/token?scope=repository:${owner}/${name}:pull" | jq -r '.token')
+            tags=$(curl -fsSL -H "Authorization: Bearer ${token}" \
+              "https://ghcr.io/v2/${owner}/${name}/tags/list?n=10000" | jq -r '.tags[]?')
+
+            found=""
+            for c in "${commits[@]}"; do
+              if grep -qx "sha-${c:0:7}" <<<"$tags"; then found="$c"; break; fi
+            done
+            if [ -z "$found" ]; then
+              echo "::error::No hay imagen publicada de ${name} para ningún commit reciente de main"
+              exit 1
+            fi
+
+            echo "TF_VAR_${name//-/_}_commit=${found}" >> "$GITHUB_ENV"
+            echo "- \`${name}\`: \`sha-${found:0:7}\`" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.0
+          terraform_wrapper: false
+
+      - name: Terraform Init (backend stdevopssre)
+        run: terraform init -input=false
+
+      - name: Terraform Plan
+        run: |
+          set -o pipefail
+          terraform plan -input=false -lock-timeout=5m -no-color | tee plan.txt
+          {
+            echo "### Terraform plan"
+            echo '```'
+            cat plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -5,3 +5,21 @@ __pycache__/
 .vscode/
 .idea/
 .DS_Store
+
+# ==========================================
+# TERRAFORM
+# ==========================================
+# Carpetas temporales y binarios descargados por terraform init
+.terraform/
+
+# Archivos de estado de la infraestructura (contienen datos sensibles)
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Archivos de variables donde defines contraseñas locales
+*.tfvars
+*.tfvars.json
+
+# Logs de error
+crash.log
