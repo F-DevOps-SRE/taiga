@@ -2,9 +2,9 @@ name: "Terraform CI & Governance Validation"
 
 on:
   push:
-    branches: [ "main", "feature/*" ]
+    branches: ["main", "feature/*"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   validate:
@@ -134,10 +134,13 @@ jobs:
       - name: Terraform Plan
         run: |
           set -o pipefail
-          terraform plan -input=false -lock-timeout=5m -no-color | tee plan.txt
+          terraform plan -input=false -lock-timeout=5m -no-color -out=tfplan | tee plan.txt
           {
             echo "### Terraform plan"
             echo '```'
             cat plan.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Terraform Apply
+        run: terraform apply tfplan
