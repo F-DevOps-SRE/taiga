@@ -62,7 +62,9 @@ jobs:
     needs: validate
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Borrar/crear un Container Apps Environment puede tardar >20 min. Si el job se
+    # cancela a mitad del apply, el lease del tfstate queda tomado.
+    timeout-minutes: 60
     permissions:
       contents: read
     # Un solo plan a la vez sobre el mismo estado remoto

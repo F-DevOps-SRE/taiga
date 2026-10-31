@@ -60,6 +60,13 @@ resource "azurerm_container_app_environment" "cae" {
   infrastructure_subnet_id       = var.subnet_id
   internal_load_balancer_enabled = false
   log_analytics_workspace_id     = azurerm_log_analytics_workspace.logs.id
+
+  # Azure crea y nombra solo el grupo de recursos de infraestructura
+  # (ME_cae-taiga_rg-taiga_eastus). Como no está en la configuración, el provider
+  # ve "valor -> null" y fuerza reemplazar el environment (y todas las apps) en cada plan.
+  lifecycle {
+    ignore_changes = [infrastructure_resource_group_name]
+  }
 }
 
 # 3. Montaje del Azure Files Share en el Environment
