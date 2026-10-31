@@ -81,7 +81,7 @@ resource "azurerm_container_app" "postgres" {
 
   template {
     # Siempre encendido: una app TCP no despierta desde cero con tráfico.
-    min_replicas = 1
+    min_replicas = 0
     max_replicas = 1
 
     container {
@@ -134,7 +134,7 @@ resource "azurerm_container_app" "rabbitmq" {
 
   template {
     # Siempre encendido: una app TCP no despierta desde cero con tráfico.
-    min_replicas = 1
+    min_replicas = 0
     max_replicas = 1
 
     container {
@@ -190,7 +190,7 @@ resource "azurerm_container_app" "taiga" {
 
   template {
     # Una sola réplica: el backend corre migraciones al arrancar.
-    min_replicas = 1
+    min_replicas = 0
     max_replicas = 1
 
     volume {
