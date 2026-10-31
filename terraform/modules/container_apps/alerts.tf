@@ -1,7 +1,7 @@
 # Alertas de Taiga.
 #
 #   alert-taiga-startup-failed   taiga-back no pudo arrancar (migrate/loaddata/collectstatic)
-#   alert-taiga-restarts         algún contenedor de ca-taiga, ca-postgres o ca-rabbitmq se reinició
+#   alert-taiga-restarts-<app>   algún contenedor de ca-taiga, ca-postgres o ca-rabbitmq se reinició
 #   alert-taiga-slo-fast-burn    error budget de 30 días consumiéndose 14.4x (se acaba en ~2 días)
 #   alert-taiga-slo-slow-burn    error budget consumiéndose 6x (se acaba en ~5 días)
 #   alert-taiga-events-crash     taiga-events terminó por una excepción no controlada
@@ -69,20 +69,20 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "startup_failed" {
 
 # --- Reinicios de contenedores ---
 # RestartCount es acumulado por réplica: > 0 mientras viva una réplica que se reinició.
+# Una alerta por app: Azure no admite alertas de métricas sobre varias Container Apps.
 resource "azurerm_monitor_metric_alert" "restarts" {
-  name                = "alert-taiga-restarts"
-  description         = "Un contenedor se reinició (crash, OOM o probe fallido). Ver ContainerAppSystemLogs_CL."
+  for_each = {
+    taiga    = azurerm_container_app.taiga.id
+    postgres = azurerm_container_app.postgres.id
+    rabbitmq = azurerm_container_app.rabbitmq.id
+  }
+  name                = "alert-taiga-restarts-${each.key}"
+  description         = "Un contenedor de ca-${each.key} se reinició (crash, OOM o probe fallido). Ver ContainerAppSystemLogs_CL."
   resource_group_name = var.resource_group_name
-  scopes = [
-    azurerm_container_app.taiga.id,
-    azurerm_container_app.postgres.id,
-    azurerm_container_app.rabbitmq.id,
-  ]
-  target_resource_type     = "Microsoft.App/containerApps"
-  target_resource_location = var.location
-  severity                 = 2
-  frequency                = "PT5M"
-  window_size              = "PT15M"
+  scopes              = [each.value]
+  severity            = 2
+  frequency           = "PT5M"
+  window_size         = "PT15M"
 
   criteria {
     metric_namespace = "Microsoft.App/containerApps"

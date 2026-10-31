@@ -73,7 +73,7 @@ Definidas en `terraform/modules/container_apps/alerts.tf`:
 | Alerta | Dispara cuando |
 | --- | --- |
 | `alert-taiga-startup-failed` (sev 1) | taiga-back falla en migrate, loaddata o collectstatic |
-| `alert-taiga-restarts` (sev 2) | algún contenedor de `ca-taiga`, `ca-postgres` o `ca-rabbitmq` se reinicia |
+| `alert-taiga-restarts-{taiga,postgres,rabbitmq}` (sev 2) | algún contenedor de esa Container App se reinicia (una alerta por app: Azure no admite una sola sobre varias) |
 | `alert-taiga-slo-fast-burn` (sev 1) | burn rate > 14.4 en 1 h (el error budget de 30 días se acaba en ~2 días) |
 | `alert-taiga-slo-slow-burn` (sev 2) | burn rate > 6 en 6 h (se acaba en ~5 días) |
 | `alert-taiga-events-crash` (sev 2) | taiga-events termina por una excepción no controlada |
