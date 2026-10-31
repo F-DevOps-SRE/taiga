@@ -2582,6 +2582,225 @@
         "showHeader": true,
         "cellHeight": "sm"
       }
+    },
+    {
+      "type": "row",
+      "title": "Arranque y servicios sin SDK propio (gateway, events, RabbitMQ)",
+      "id": 42,
+      "gridPos": {
+        "x": 0,
+        "y": 129,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "table",
+      "title": "Arranques de taiga-back",
+      "description": "Pasos de docker/startup.py (migrate, loaddata, collectstatic): duración y, si falló, la migración y el error.",
+      "id": 43,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 130,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "union traces, exceptions\n| where $__timeFilter(timestamp)\n| where tostring(customDimensions.taiga_phase) == \"startup\"\n| top 100 by timestamp desc\n| project timestamp, severityLevel, paso = tostring(customDimensions.taiga_step), migracion = tostring(customDimensions.taiga_migration), migraciones_aplicadas = tostring(customDimensions.migrations_applied), duracion_ms = tostring(customDimensions.duration_ms), mensaje = coalesce(message, outerMessage)",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Gateway: peticiones por servicio y estado",
+      "description": "Access log JSON del nginx de entrada: cubre también front, events y taiga-protected.",
+      "id": 44,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 138,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "ContainerAppConsoleLogs_CL\n| where $__timeFilter(TimeGenerated)\n| where ContainerName_s == \"taiga-gateway\" and Log_s startswith \"{\"\n| extend r = parse_json(Log_s)\n| extend uri = tostring(r.uri), status = toint(r.status), request_time = todouble(r.request_time)\n| extend servicio = case(uri startswith \"/api/\" or uri startswith \"/admin/\", \"taiga-back\",\n                         uri startswith \"/events\", \"taiga-events\",\n                         uri startswith \"/media/\", \"taiga-protected\",\n                         uri startswith \"/static/\", \"estáticos (gateway)\",\n                         \"taiga-front\")\n| extend clase = strcat(tostring(status / 100), \"xx\")\n| summarize peticiones = count() by bin(TimeGenerated, $__interval), serie = strcat(servicio, \" \", clase)\n| order by TimeGenerated asc",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/Microsoft.OperationalInsights/workspaces/log-taiga"
+            ],
+            "resultFormat": "time_series"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Gateway: latencia p95 por servicio",
+      "description": "request_time del nginx (incluye la espera al upstream). /events se excluye: son WebSockets de larga duración.",
+      "id": 45,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 138,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "ContainerAppConsoleLogs_CL\n| where $__timeFilter(TimeGenerated)\n| where ContainerName_s == \"taiga-gateway\" and Log_s startswith \"{\"\n| extend r = parse_json(Log_s)\n| extend uri = tostring(r.uri), status = toint(r.status), request_time = todouble(r.request_time)\n| extend servicio = case(uri startswith \"/api/\" or uri startswith \"/admin/\", \"taiga-back\",\n                         uri startswith \"/events\", \"taiga-events\",\n                         uri startswith \"/media/\", \"taiga-protected\",\n                         uri startswith \"/static/\", \"estáticos (gateway)\",\n                         \"taiga-front\")\n| where servicio != \"taiga-events\"\n| summarize p95 = percentile(request_time, 95) by bin(TimeGenerated, $__interval), servicio\n| order by TimeGenerated asc",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/Microsoft.OperationalInsights/workspaces/log-taiga"
+            ],
+            "resultFormat": "time_series"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "table",
+      "title": "taiga-events y RabbitMQ: errores y conexiones",
+      "description": "Logs JSON de taiga-events (winston) y RabbitMQ: errores, warnings y cierres de conexión AMQP con su motivo.",
+      "id": 46,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 146,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "ContainerAppConsoleLogs_CL\n| where $__timeFilter(TimeGenerated)\n| where ContainerName_s in (\"taiga-events\", \"rabbitmq\") and Log_s startswith \"{\"\n| extend r = parse_json(Log_s)\n| extend nivel = tostring(r.level), mensaje = coalesce(tostring(r.msg), tostring(r.message))\n| where nivel in (\"error\", \"warning\", \"warn\", \"critical\") or mensaje has \"closing AMQP connection\"\n| top 100 by TimeGenerated desc\n| project TimeGenerated, contenedor = ContainerName_s, nivel, mensaje",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/Microsoft.OperationalInsights/workspaces/log-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
     }
   ]
 }

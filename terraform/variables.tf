@@ -62,3 +62,15 @@ variable "taiga_protected_commit" {
     error_message = "Debe ser un SHA de commit (7 a 40 caracteres hex)."
   }
 }
+
+# Alertas. En el workflow: secreto ALERT_EMAIL y variable de repositorio
+# AVAILABILITY_TEST_ENABLED ("true" para las demos).
+variable "alert_email" {
+  type    = string
+  default = ""
+}
+
+variable "availability_test_enabled" {
+  type    = bool
+  default = false
+}

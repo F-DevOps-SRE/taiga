@@ -3,14 +3,9 @@ set -eu
 
 cd /taiga-back
 
-echo "[Taiga] Applying database migrations..."
-python manage.py migrate --noinput
-
-echo "[Taiga] Loading initial project templates..."
-python manage.py loaddata initial_project_templates --verbosity 0
-
-echo "[Taiga] Collecting static files..."
-python manage.py collectstatic --noinput --clear
+# migrate, loaddata y collectstatic, con telemetría (ver docker/startup.py)
+echo "[Taiga] Running startup tasks..."
+python docker/startup.py
 
 echo "[Taiga] Fixing permissions on persistent directories..."
 chown -R taiga:taiga /taiga-back/static /taiga-back/media

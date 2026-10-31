@@ -88,6 +88,10 @@ jobs:
       TF_VAR_postgres_password: ${{ secrets.POSTGRES_PASSWORD }}
       TF_VAR_rabbitmq_pass: ${{ secrets.RABBITMQ_PASS }}
       TF_VAR_taiga_secret_key: ${{ secrets.TAIGA_SECRET_KEY }}
+      # Alertas: correo (opcional) y test de disponibilidad bajo demanda
+      # (Settings > Variables > AVAILABILITY_TEST_ENABLED = true para las demos)
+      TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+      TF_VAR_availability_test_enabled: ${{ vars.AVAILABILITY_TEST_ENABLED == 'true' }}
 
     steps:
       - name: Checkout Code

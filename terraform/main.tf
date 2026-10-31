@@ -66,4 +66,7 @@ module "container_apps" {
   taiga_events_commit    = var.taiga_events_commit
   taiga_protected_commit = var.taiga_protected_commit
   gateway_nginx_conf     = file("${path.root}/../taiga-gateway/nginx.conf")
+
+  alert_email               = var.alert_email
+  availability_test_enabled = var.availability_test_enabled
 }

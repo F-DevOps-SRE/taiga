@@ -90,3 +90,16 @@ variable "storage_share_name" {
   type        = string
   description = "Azure Files share montado en el environment"
 }
+
+# --- Alertas (alerts.tf) ---
+variable "alert_email" {
+  type        = string
+  default     = ""
+  description = "Correo que recibe las alertas. Vacío: las alertas solo quedan en Azure Monitor"
+}
+
+variable "availability_test_enabled" {
+  type        = bool
+  default     = false
+  description = "Crea el test de disponibilidad (cada 5 min) y su alerta. Pensado para las demos"
+}

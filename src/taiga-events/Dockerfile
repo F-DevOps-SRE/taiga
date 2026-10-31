@@ -26,4 +26,5 @@ ENV NODE_ENV=production \
 
 EXPOSE 8888
 
-CMD ["node", "./src/index.js"]
+# telemetry.js se carga primero: solo actúa si existe APPLICATIONINSIGHTS_CONNECTION_STRING
+CMD ["node", "--require", "./src/telemetry.js", "./src/index.js"]

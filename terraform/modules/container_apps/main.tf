@@ -92,10 +92,42 @@ resource "azurerm_container_app" "postgres" {
     max_replicas = 1
 
     container {
-      name   = "postgres"
-      image  = "postgres:18-alpine"
+      name = "postgres"
+      # La misma versión que docker-compose. En PostgreSQL 18 los NOT NULL pasan a
+      # pg_constraint y la migración history.0011 de Taiga (que borra y recrea
+      # todas las constraints de una tabla) falla con "is an identity column".
+      image  = "postgres:15-alpine"
       cpu    = 0.25
       memory = "0.5Gi"
+
+      # Logs con proceso, usuario, base y aplicación en cada línea (el STATEMENT
+      # de un error sale en otra fila: se une por el [pid]), consultas > 1 s y
+      # esperas por locks.
+      args = [
+        "postgres",
+        "-c", "log_line_prefix=%m [%p] %q%u@%d app=%a ",
+        "-c", "log_min_duration_statement=1000",
+        "-c", "log_lock_waits=on",
+      ]
+
+      startup_probe {
+        transport               = "TCP"
+        port                    = 5432
+        interval_seconds        = 10
+        failure_count_threshold = 10
+      }
+
+      readiness_probe {
+        transport        = "TCP"
+        port             = 5432
+        interval_seconds = 10
+      }
+
+      liveness_probe {
+        transport        = "TCP"
+        port             = 5432
+        interval_seconds = 30
+      }
 
       env {
         name  = "POSTGRES_DB"
@@ -149,6 +181,33 @@ resource "azurerm_container_app" "rabbitmq" {
       image  = "rabbitmq:3.13-management-alpine"
       cpu    = 0.25
       memory = "0.5Gi"
+
+      # Logs de consola en JSON: sin colores ANSI y un error por línea (antes los
+      # errores de Erlang llegaban partidos y con el mensaje vacío). Incluyen las
+      # aperturas y cierres de conexiones AMQP con su motivo.
+      command = ["/bin/sh", "-c"]
+      args = [
+        "printf '%s\\n' 'log.console = true' 'log.console.level = info' 'log.console.formatter = json' > /etc/rabbitmq/conf.d/90-json-logs.conf && exec docker-entrypoint.sh rabbitmq-server"
+      ]
+
+      startup_probe {
+        transport               = "TCP"
+        port                    = 5672
+        interval_seconds        = 10
+        failure_count_threshold = 10
+      }
+
+      readiness_probe {
+        transport        = "TCP"
+        port             = 5672
+        interval_seconds = 10
+      }
+
+      liveness_probe {
+        transport        = "TCP"
+        port             = 5672
+        interval_seconds = 30
+      }
 
       # El usuario por defecto "guest" solo acepta conexiones desde localhost,
       # por eso se define un usuario propio y el vhost que espera Taiga.
@@ -222,6 +281,18 @@ resource "azurerm_container_app" "taiga" {
       env {
         name  = "NGINX_CONF_B64"
         value = base64encode(local.gateway_conf)
+      }
+
+      readiness_probe {
+        transport        = "TCP"
+        port             = local.gateway_port
+        interval_seconds = 10
+      }
+
+      liveness_probe {
+        transport        = "TCP"
+        port             = local.gateway_port
+        interval_seconds = 30
       }
 
       volume_mounts {
@@ -316,6 +387,29 @@ resource "azurerm_container_app" "taiga" {
         value = "taiga-back"
       }
 
+      # Gunicorn abre el 8000 solo al terminar migrate, loaddata y collectstatic
+      # (docker/startup.py). Sin volumen en Postgres, cada arranque migra desde
+      # cero: se dan hasta 10 min (10 x 60 s) antes de reiniciar el contenedor.
+      # Los probes son TCP y no HTTP para no llenar la tabla requests (y el SLO).
+      startup_probe {
+        transport               = "TCP"
+        port                    = 8000
+        interval_seconds        = 60
+        failure_count_threshold = 10
+      }
+
+      readiness_probe {
+        transport        = "TCP"
+        port             = 8000
+        interval_seconds = 10
+      }
+
+      liveness_probe {
+        transport        = "TCP"
+        port             = 8000
+        interval_seconds = 30
+      }
+
       volume_mounts {
         name = local.data_volume_name
         path = local.data_mount_path
@@ -335,6 +429,18 @@ resource "azurerm_container_app" "taiga" {
       args = [
         "sed -i -e 's#http://localhost:9000#${local.taiga_url}#g' -e 's#ws://localhost:9000#wss://${local.taiga_fqdn}#g' /usr/share/nginx/html/conf.json && exec nginx -g 'daemon off;'"
       ]
+
+      readiness_probe {
+        transport        = "TCP"
+        port             = 80
+        interval_seconds = 10
+      }
+
+      liveness_probe {
+        transport        = "TCP"
+        port             = 80
+        interval_seconds = 30
+      }
     }
 
     # --- taiga-events: WebSockets (8888) y health check (3023) ---
@@ -372,7 +478,18 @@ resource "azurerm_container_app" "taiga" {
         name  = "LOG_LEVEL"
         value = "info"
       }
+      # OpenTelemetry -> Application Insights (lo activa src/telemetry.js)
+      env {
+        name        = "APPLICATIONINSIGHTS_CONNECTION_STRING"
+        secret_name = "appinsights-connection-string"
+      }
+      env {
+        name  = "OTEL_SERVICE_NAME"
+        value = "taiga-events"
+      }
 
+      # /healthz revisa también RabbitMQ: no se usa como readiness, porque con
+      # RabbitMQ en cero réplicas dejaría sin tráfico a toda la app (front y API).
       liveness_probe {
         transport = "HTTP"
         port      = 3023
@@ -394,6 +511,18 @@ resource "azurerm_container_app" "taiga" {
       env {
         name  = "MAX_AGE"
         value = "3600"
+      }
+
+      readiness_probe {
+        transport        = "TCP"
+        port             = 8003
+        interval_seconds = 10
+      }
+
+      liveness_probe {
+        transport        = "TCP"
+        port             = 8003
+        interval_seconds = 30
       }
     }
   }
