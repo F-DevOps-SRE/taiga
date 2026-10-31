@@ -13,9 +13,17 @@ Container Apps: CPU, memoria, reinicios, réplicas, ingress ── Azure Monitor
 | Peticiones HTTP de la API | `azure-monitor-opentelemetry` (instrumentación de Django) | `requests` |
 | Consultas a PostgreSQL | instrumentación de psycopg2 | `dependencies` (`type == "postgresql"`) |
 | Llamadas HTTP salientes | instrumentación de requests/urllib3 | `dependencies` |
+| Logs de Python (`taiga`, `django.request`, `gunicorn.error`...) | handler de OpenTelemetry, nivel INFO+ (`OTEL_TAIGA_LOG_LEVEL`) | `traces` |
+| Excepciones no controladas | instrumentación de Django | `exceptions` |
+| CPU y memoria de cada worker | performance counters de la distro | `performanceCounters` |
+| Live Metrics | distro | portal: Application Insights > Live metrics |
 | CPU, memoria, reinicios, réplicas, ingress | métricas de plataforma de Container Apps | `microsoft.app/containerapps` |
+| stdout/stderr de todos los contenedores | Container Apps → `log-taiga` | `ContainerAppConsoleLogs_CL` |
+| Eventos de plataforma (reinicios, probes) | Container Apps → `log-taiga` | `ContainerAppSystemLogs_CL` |
 
-OpenTelemetry se activa en `src/taiga-back/docker/gunicorn.conf.py` (hook `post_fork`), sin tocar el código de Taiga.
+Logs, excepciones y dependencias llevan el `operation_Id` de la petición: desde una traza se ven sus logs y viceversa.
+
+OpenTelemetry se activa en `src/taiga-back/docker/gunicorn.conf.py` sin tocar el código de Taiga: `post_fork` inicializa la distro y `post_worker_init` engancha los loggers de Taiga que no propagan al raíz (y reactiva los que apaga `disable_existing_loggers`).
 Solo arranca si existe `APPLICATIONINSIGHTS_CONNECTION_STRING`, así que docker-compose sigue funcionando igual.
 Terraform crea `appi-taiga` y le pasa la connection string a taiga-back como secreto.
 
@@ -26,7 +34,11 @@ Terraform crea `appi-taiga` y le pasa la connection string a taiga-back como sec
 1. **SLOs y error budget (30 días):** SLI de disponibilidad y de latencia, presupuesto restante (gauge y burndown), errores que aún caben, burn rate 1 h y 6 h.
 2. **Golden signals de la API:** latencia p50/p95/p99, tráfico (req/s), errores 4xx/5xx, top de endpoints.
 3. **Golden signals de PostgreSQL** (medidos desde el cliente): latencia, consultas/s, fallos.
-4. **Saturación:** CPU y memoria (% del límite), reinicios y réplicas de `ca-taiga`, `ca-postgres` y `ca-rabbitmq`; peticiones del ingress por código de estado.
+4. **Saturación:** CPU y memoria (% del límite), reinicios y réplicas de `ca-taiga`, `ca-postgres` y `ca-rabbitmq`; peticiones del ingress por código de estado; CPU y memoria de los workers de taiga-back.
+5. **Trazas:** peticiones más lentas y fallidas, vista de la traza seleccionada y tabla de dependencias.
+6. **Logs:** logs por severidad, excepciones, logs Warning+ y errores en la consola de todos los contenedores.
+
+Clic en un `operation_Id` (o escribirlo en la variable `operation_id`) filtra la traza, sus logs y sus excepciones.
 
 Los SLOs son variables del dashboard (por defecto 99.5 % sin 5xx y 95 % bajo 1000 ms).
 

@@ -110,6 +110,23 @@
             "value": "95"
           }
         ]
+      },
+      {
+        "type": "textbox",
+        "name": "operation_id",
+        "label": "operation_id (traza)",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "",
+            "value": ""
+          }
+        ]
       }
     ]
   },
@@ -1795,6 +1812,775 @@
         "tooltip": {
           "mode": "multi"
         }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU de los workers de taiga-back (normalizada)",
+      "description": "Performance counter de OpenTelemetry: CPU del proceso Python dividida entre los núcleos.",
+      "id": 27,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 62,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "performanceCounters\n| where $__timeFilter(timestamp)\n| where name has \"Processor Time Normalized\" or counter has \"Processor Time Normalized\"\n| summarize promedio = avg(value), maximo = max(value) by bin(timestamp, $__interval)\n| order by timestamp asc",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "time_series"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line+area"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Memoria de los workers de taiga-back (Private Bytes)",
+      "description": "",
+      "id": 28,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 62,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "performanceCounters\n| where $__timeFilter(timestamp)\n| where name has \"Private Bytes\" or counter has \"Private Bytes\"\n| summarize promedio = avg(value), maximo = max(value) by bin(timestamp, $__interval)\n| order by timestamp asc",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "time_series"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Trazas (OpenTelemetry)",
+      "id": 29,
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 70,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "table",
+      "title": "Peticiones más lentas",
+      "description": "Clic en operation_Id para filtrar la traza y los logs de esa petición.",
+      "id": 30,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 71,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp)\n| top 20 by duration desc\n| project timestamp, operation_Name, resultCode, duration, operation_Id",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "operation_Id"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Ver traza y logs de esta petición",
+                    "url": "/d/taiga-golden-signals?${__url_time_range}&${subscription:queryparam}&${resourceGroup:queryparam}&var-operation_id=${__value.raw}"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "type": "table",
+      "title": "Peticiones fallidas (5xx) recientes",
+      "description": "",
+      "id": 31,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 71,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp)\n| where toint(resultCode) >= 500\n| top 20 by timestamp desc\n| project timestamp, operation_Name, resultCode, duration, operation_Id",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "operation_Id"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Ver traza y logs de esta petición",
+                    "url": "/d/taiga-golden-signals?${__url_time_range}&${subscription:queryparam}&${resourceGroup:queryparam}&var-operation_id=${__value.raw}"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "type": "traces",
+      "title": "Traza de la petición seleccionada ($operation_id)",
+      "id": 32,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "description": "Elige un operation_Id en las tablas de arriba o escríbelo en la variable operation_id.",
+      "gridPos": {
+        "x": 0,
+        "y": 80,
+        "w": 16,
+        "h": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Traces",
+          "azureTraces": {
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "operationId": "$operation_id",
+            "resultFormat": "trace"
+          }
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Dependencias (mapa de la aplicación)",
+      "description": "",
+      "id": 33,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 80,
+        "w": 8,
+        "h": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "dependencies\n| where $__timeFilter(timestamp)\n| summarize llamadas = sum(itemCount), fallidas = sumif(itemCount, success == false), p95_ms = percentile(duration, 95) by type, target\n| order by llamadas desc",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "type": "row",
+      "title": "Logs",
+      "id": 34,
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 92,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Logs de taiga-back por severidad",
+      "description": "",
+      "id": 35,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 93,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "traces\n| where $__timeFilter(timestamp)\n| extend severidad = case(severityLevel == 0, \"Verbose\", severityLevel == 1, \"Information\", severityLevel == 2, \"Warning\", severityLevel == 3, \"Error\", \"Critical\")\n| summarize n = sum(itemCount) by bin(timestamp, $__interval), severidad\n| order by timestamp asc",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "time_series"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Excepciones por tipo",
+      "description": "",
+      "id": 36,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 93,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "exceptions\n| where $__timeFilter(timestamp)\n| summarize n = sum(itemCount) by bin(timestamp, $__interval), type\n| order by timestamp asc",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "time_series"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "table",
+      "title": "Excepciones recientes",
+      "description": "Con stack trace completo en Application Insights > Failures.",
+      "id": 37,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 101,
+        "w": 12,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "exceptions\n| where $__timeFilter(timestamp)\n| where \"$operation_id\" == \"\" or operation_Id == \"$operation_id\"\n| top 50 by timestamp desc\n| project timestamp, type, mensaje = coalesce(outerMessage, innermostMessage), operation_Name, operation_Id",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "operation_Id"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Ver traza y logs de esta petición",
+                    "url": "/d/taiga-golden-signals?${__url_time_range}&${subscription:queryparam}&${resourceGroup:queryparam}&var-operation_id=${__value.raw}"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "type": "table",
+      "title": "Logs de taiga-back (Warning o más)",
+      "description": "Con un operation_id seleccionado muestra todos los logs de esa petición, de cualquier severidad.",
+      "id": 38,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 101,
+        "w": 12,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "traces\n| where $__timeFilter(timestamp) and (severityLevel >= 2 or \"$operation_id\" != \"\")\n| where \"$operation_id\" == \"\" or operation_Id == \"$operation_id\"\n| top 100 by timestamp desc\n| project timestamp, severidad = case(severityLevel == 0, \"Verbose\", severityLevel == 1, \"Information\", severityLevel == 2, \"Warning\", severityLevel == 3, \"Error\", \"Critical\"), message, operation_Name, operation_Id",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "operation_Id"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Ver traza y logs de esta petición",
+                    "url": "/d/taiga-golden-signals?${__url_time_range}&${subscription:queryparam}&${resourceGroup:queryparam}&var-operation_id=${__value.raw}"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Logs de consola por contenedor (todo el sistema)",
+      "description": "stdout/stderr de todos los contenedores (gateway, front, back, events, protected, Postgres, RabbitMQ).",
+      "id": 39,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 111,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "ContainerAppConsoleLogs_CL\n| where $__timeFilter(TimeGenerated)\n| summarize lineas = count() by bin(TimeGenerated, $__interval), contenedor = strcat(ContainerAppName_s, \"/\", ContainerName_s)\n| order by TimeGenerated asc",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/Microsoft.OperationalInsights/workspaces/log-taiga"
+            ],
+            "resultFormat": "time_series"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Eventos de plataforma (Container Apps)",
+      "description": "Reinicios, probes fallidas, descargas de imagen, escalado.",
+      "id": 40,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 111,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "ContainerAppSystemLogs_CL\n| where $__timeFilter(TimeGenerated)\n| summarize n = count() by bin(TimeGenerated, $__interval), Reason_s\n| order by TimeGenerated asc",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/Microsoft.OperationalInsights/workspaces/log-taiga"
+            ],
+            "resultFormat": "time_series"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "table",
+      "title": "Errores en logs de consola (todos los contenedores)",
+      "description": "",
+      "id": 41,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 119,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "ContainerAppConsoleLogs_CL\n| where $__timeFilter(TimeGenerated)\n| where Log_s matches regex @\"(?i)(error|exception|traceback|fatal|panic|critical)\"\n| top 100 by TimeGenerated desc\n| project TimeGenerated, contenedor = strcat(ContainerAppName_s, \"/\", ContainerName_s), Log_s",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/Microsoft.OperationalInsights/workspaces/log-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
       }
     }
   ]
