@@ -42,6 +42,16 @@ resource "azurerm_log_analytics_workspace" "logs" {
   retention_in_days   = 30
 }
 
+# 1b. Application Insights (telemetría OpenTelemetry de taiga-back).
+#     Basado en workspace: los datos quedan en log-taiga, con su misma retención.
+resource "azurerm_application_insights" "appi" {
+  name                = "appi-taiga"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+  workspace_id        = azurerm_log_analytics_workspace.logs.id
+  application_type    = "other"
+}
+
 # 2. Container Apps Environment (cae-taiga)
 resource "azurerm_container_app_environment" "cae" {
   name                           = "cae-taiga"
@@ -289,6 +299,15 @@ resource "azurerm_container_app" "taiga" {
         name  = "GUNICORN_WORKERS"
         value = "2"
       }
+      # OpenTelemetry -> Application Insights (lo activa docker/gunicorn.conf.py)
+      env {
+        name        = "APPLICATIONINSIGHTS_CONNECTION_STRING"
+        secret_name = "appinsights-connection-string"
+      }
+      env {
+        name  = "OTEL_SERVICE_NAME"
+        value = "taiga-back"
+      }
 
       volume_mounts {
         name = local.data_volume_name
@@ -385,6 +404,11 @@ resource "azurerm_container_app" "taiga" {
   secret {
     name  = "rabbitmq-password"
     value = var.rabbitmq_password
+  }
+
+  secret {
+    name  = "appinsights-connection-string"
+    value = azurerm_application_insights.appi.connection_string
   }
 
   secret {

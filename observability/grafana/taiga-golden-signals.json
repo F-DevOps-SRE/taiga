@@ -1,0 +1,1801 @@
+{
+  "title": "Taiga — Golden Signals y SLOs",
+  "uid": "taiga-golden-signals",
+  "tags": [
+    "taiga",
+    "sre",
+    "golden-signals",
+    "slo"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "type": "datasource",
+        "name": "ds",
+        "label": "Azure Monitor",
+        "query": "grafana-azure-monitor-datasource",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "type": "textbox",
+        "name": "subscription",
+        "label": "Suscripción",
+        "query": "ce1292bf-e44a-470d-895c-d6f02b239f37",
+        "current": {
+          "text": "ce1292bf-e44a-470d-895c-d6f02b239f37",
+          "value": "ce1292bf-e44a-470d-895c-d6f02b239f37"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "ce1292bf-e44a-470d-895c-d6f02b239f37",
+            "value": "ce1292bf-e44a-470d-895c-d6f02b239f37"
+          }
+        ]
+      },
+      {
+        "type": "textbox",
+        "name": "resourceGroup",
+        "label": "Resource group",
+        "query": "rg-taiga",
+        "current": {
+          "text": "rg-taiga",
+          "value": "rg-taiga"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "rg-taiga",
+            "value": "rg-taiga"
+          }
+        ]
+      },
+      {
+        "type": "textbox",
+        "name": "slo_availability",
+        "label": "SLO disponibilidad (%)",
+        "query": "99.5",
+        "current": {
+          "text": "99.5",
+          "value": "99.5"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "99.5",
+            "value": "99.5"
+          }
+        ]
+      },
+      {
+        "type": "textbox",
+        "name": "slo_latency_ms",
+        "label": "Umbral latencia (ms)",
+        "query": "1000",
+        "current": {
+          "text": "1000",
+          "value": "1000"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "1000",
+            "value": "1000"
+          }
+        ]
+      },
+      {
+        "type": "textbox",
+        "name": "slo_latency_target",
+        "label": "SLO latencia (%)",
+        "query": "95",
+        "current": {
+          "text": "95",
+          "value": "95"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "95",
+            "value": "95"
+          }
+        ]
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "SLOs y Error Budget (ventana móvil de 30 días)",
+      "id": 1,
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "text",
+      "title": "Definición de SLOs",
+      "id": 2,
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 6,
+        "h": 10
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**SLO de disponibilidad:** `$slo_availability%` de las peticiones a la API responden sin error 5xx.\n\n**SLO de latencia:** `$slo_latency_target%` de las peticiones responden en menos de `$slo_latency_ms ms`.\n\n**Error budget** = 1 − SLO. *Restante* = 1 − (errores observados / errores permitidos).\n\n**Burn rate** = tasa de error / (1 − SLO). 1× consume el presupuesto justo en 30 días; 14.4× en 1 h o 6× en 6 h son los umbrales de alerta rápida del *SRE Workbook*.\n\nFuente: Application Insights `appi-taiga` (OpenTelemetry de taiga-back)."
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Disponibilidad (SLI 30d)",
+      "description": "Porcentaje de peticiones sin 5xx en los últimos 30 días. Verde si cumple el SLO.",
+      "id": 3,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 1,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp)\n| summarize total = sum(itemCount), bad = sumif(itemCount, toint(resultCode) >= 500)\n| project availability = iff(total == 0, 100.0, 100.0 * (1.0 - todouble(bad) / total))",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 99.5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "timeFrom": "30d"
+    },
+    {
+      "type": "gauge",
+      "title": "Error budget restante (disponibilidad)",
+      "description": "Fracción del presupuesto de errores de 30 días que aún no se ha consumido.",
+      "id": 4,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 10,
+        "y": 1,
+        "w": 5,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp)\n| summarize total = sum(itemCount), bad = sumif(itemCount, toint(resultCode) >= 500)\n| project budget_remaining = iff(total == 0, 100.0, 100.0 * (1.0 - (todouble(bad) / total) / (1.0 - ($slo_availability / 100.0))))",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 25
+              },
+              {
+                "color": "green",
+                "value": 50
+              }
+            ]
+          },
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "timeFrom": "30d"
+    },
+    {
+      "type": "stat",
+      "title": "Errores 5xx que aún caben",
+      "description": "Cuántas peticiones fallidas más se pueden tolerar en la ventana sin romper el SLO.",
+      "id": 5,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 15,
+        "y": 1,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp)\n| summarize total = sum(itemCount), bad = sumif(itemCount, toint(resultCode) >= 500)\n| project errores_restantes = round(total * (1.0 - ($slo_availability / 100.0)) - bad)",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "timeFrom": "30d"
+    },
+    {
+      "type": "stat",
+      "title": "Burn rate 1h",
+      "description": "Velocidad de consumo del presupuesto en la última hora. 14.4x agota el 2% del presupuesto mensual en 1 h.",
+      "id": 6,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 19,
+        "y": 1,
+        "w": 5,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp)\n| summarize total = sum(itemCount), bad = sumif(itemCount, toint(resultCode) >= 500)\n| project burn_rate = iff(total == 0, 0.0, (todouble(bad) / total) / (1.0 - ($slo_availability / 100.0)))",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "timeFrom": "1h"
+    },
+    {
+      "type": "stat",
+      "title": "Latencia (SLI 30d)",
+      "description": "Porcentaje de peticiones bajo el umbral de latencia del SLO.",
+      "id": 7,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 6,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp)\n| summarize total = sum(itemCount), fast = sumif(itemCount, duration <= $slo_latency_ms)\n| project latency_sli = iff(total == 0, 100.0, 100.0 * todouble(fast) / total)",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 95
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "timeFrom": "30d"
+    },
+    {
+      "type": "stat",
+      "title": "Error budget restante (latencia)",
+      "description": "",
+      "id": 8,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 15,
+        "y": 6,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp)\n| summarize total = sum(itemCount), slow = sumif(itemCount, duration > $slo_latency_ms)\n| project latency_budget = iff(total == 0, 100.0, 100.0 * (1.0 - (todouble(slow) / total) / (1.0 - $slo_latency_target / 100.0)))",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 25
+              },
+              {
+                "color": "green",
+                "value": 50
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "timeFrom": "30d"
+    },
+    {
+      "type": "stat",
+      "title": "Burn rate 6h",
+      "description": "",
+      "id": 9,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 19,
+        "y": 6,
+        "w": 5,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp)\n| summarize total = sum(itemCount), bad = sumif(itemCount, toint(resultCode) >= 500)\n| project burn_rate = iff(total == 0, 0.0, (todouble(bad) / total) / (1.0 - ($slo_availability / 100.0)))",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 6
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "timeFrom": "6h"
+    },
+    {
+      "type": "timeseries",
+      "title": "Error budget restante en el tiempo (30d)",
+      "description": "Consumo acumulado del presupuesto de disponibilidad a lo largo de la ventana de 30 días.",
+      "id": 10,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp)\n| summarize total = sum(itemCount), bad = sumif(itemCount, toint(resultCode) >= 500) by bin(timestamp, 1h)\n| order by timestamp asc\n| extend ct = row_cumsum(total), cb = row_cumsum(bad)\n| project timestamp, budget_restante = iff(ct == 0, 100.0, 100.0 * (1.0 - (todouble(cb) / ct) / (1.0 - ($slo_availability / 100.0))))",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "time_series"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line+area"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 25
+              },
+              {
+                "color": "transparent",
+                "value": 50
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "timeFrom": "30d"
+    },
+    {
+      "type": "timeseries",
+      "title": "Burn rate",
+      "description": "",
+      "id": 11,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 11,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp)\n| summarize total = sum(itemCount), bad = sumif(itemCount, toint(resultCode) >= 500) by bin(timestamp, $__interval)\n| project timestamp, burn_rate = iff(total == 0, 0.0, (todouble(bad) / total) / (1.0 - ($slo_availability / 100.0)))\n| order by timestamp asc",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "time_series"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line+area"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Golden Signals — API Taiga (taiga-back)",
+      "id": 12,
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 19,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Latencia (p50 / p95 / p99)",
+      "description": "",
+      "id": 13,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp)\n| summarize p50 = percentile(duration, 50), p95 = percentile(duration, 95), p99 = percentile(duration, 99) by bin(timestamp, $__interval)\n| order by timestamp asc",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "time_series"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line+area"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1000
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Tráfico (peticiones/s)",
+      "description": "",
+      "id": 14,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp)\n| summarize rps = sum(itemCount) / ($__interval / 1s) by bin(timestamp, $__interval)\n| order by timestamp asc",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "time_series"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Errores (% de peticiones)",
+      "description": "El 5xx cuenta contra el SLO; el 4xx (errores del cliente) se muestra como contexto.",
+      "id": 15,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp)\n| summarize total = sum(itemCount), e5xx = sumif(itemCount, toint(resultCode) >= 500), e4xx = sumif(itemCount, toint(resultCode) between (400 .. 499)) by bin(timestamp, $__interval)\n| project timestamp, ['5xx'] = 100.0 * e5xx / total, ['4xx'] = 100.0 * e4xx / total\n| order by timestamp asc",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "time_series"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Top endpoints por tráfico",
+      "description": "",
+      "id": 16,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let top = requests\n| where $__timeFilter(timestamp)\n| summarize n = sum(itemCount) by operation_Name\n| top 8 by n\n| project operation_Name;\nrequests\n| where $__timeFilter(timestamp)\n| where operation_Name in (top)\n| summarize n = sum(itemCount) by bin(timestamp, $__interval), operation_Name\n| order by timestamp asc",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "time_series"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Golden Signals — Base de datos (PostgreSQL, vista desde taiga-back)",
+      "id": 17,
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Latencia de consultas (p50 / p95 / p99)",
+      "description": "",
+      "id": 18,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 37,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "dependencies\n| where $__timeFilter(timestamp) and type =~ \"postgresql\"\n| summarize p50 = percentile(duration, 50), p95 = percentile(duration, 95), p99 = percentile(duration, 99) by bin(timestamp, $__interval)\n| order by timestamp asc",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "time_series"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Tráfico (consultas/s)",
+      "description": "",
+      "id": 19,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 37,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "dependencies\n| where $__timeFilter(timestamp) and type =~ \"postgresql\"\n| summarize qps = sum(itemCount) / ($__interval / 1s) by bin(timestamp, $__interval)\n| order by timestamp asc",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "time_series"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Errores (consultas fallidas)",
+      "description": "",
+      "id": 20,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 37,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "dependencies\n| where $__timeFilter(timestamp) and type =~ \"postgresql\"\n| summarize fallidas = sumif(itemCount, success == false) by bin(timestamp, $__interval)\n| order by timestamp asc",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "time_series"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Saturación — Container Apps (Azure Monitor)",
+      "id": 21,
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 45,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU (% del límite)",
+      "description": "",
+      "id": 22,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 46,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "${subscription}",
+          "azureMonitor": {
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "CpuPercentage",
+            "aggregation": "Average",
+            "timeGrain": "auto",
+            "alias": "{{ resourcename }}",
+            "allowedTimeGrainsMs": [],
+            "dimensionFilters": [],
+            "resources": [
+              {
+                "subscription": "${subscription}",
+                "resourceGroup": "${resourceGroup}",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "ca-taiga"
+              }
+            ]
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "${subscription}",
+          "azureMonitor": {
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "CpuPercentage",
+            "aggregation": "Average",
+            "timeGrain": "auto",
+            "alias": "{{ resourcename }}",
+            "allowedTimeGrainsMs": [],
+            "dimensionFilters": [],
+            "resources": [
+              {
+                "subscription": "${subscription}",
+                "resourceGroup": "${resourceGroup}",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "ca-postgres"
+              }
+            ]
+          }
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "${subscription}",
+          "azureMonitor": {
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "CpuPercentage",
+            "aggregation": "Average",
+            "timeGrain": "auto",
+            "alias": "{{ resourcename }}",
+            "allowedTimeGrainsMs": [],
+            "dimensionFilters": [],
+            "resources": [
+              {
+                "subscription": "${subscription}",
+                "resourceGroup": "${resourceGroup}",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "ca-rabbitmq"
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line+area"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Memoria (% del límite)",
+      "description": "",
+      "id": 23,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 46,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "${subscription}",
+          "azureMonitor": {
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "MemoryPercentage",
+            "aggregation": "Average",
+            "timeGrain": "auto",
+            "alias": "{{ resourcename }}",
+            "allowedTimeGrainsMs": [],
+            "dimensionFilters": [],
+            "resources": [
+              {
+                "subscription": "${subscription}",
+                "resourceGroup": "${resourceGroup}",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "ca-taiga"
+              }
+            ]
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "${subscription}",
+          "azureMonitor": {
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "MemoryPercentage",
+            "aggregation": "Average",
+            "timeGrain": "auto",
+            "alias": "{{ resourcename }}",
+            "allowedTimeGrainsMs": [],
+            "dimensionFilters": [],
+            "resources": [
+              {
+                "subscription": "${subscription}",
+                "resourceGroup": "${resourceGroup}",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "ca-postgres"
+              }
+            ]
+          }
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "${subscription}",
+          "azureMonitor": {
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "MemoryPercentage",
+            "aggregation": "Average",
+            "timeGrain": "auto",
+            "alias": "{{ resourcename }}",
+            "allowedTimeGrainsMs": [],
+            "dimensionFilters": [],
+            "resources": [
+              {
+                "subscription": "${subscription}",
+                "resourceGroup": "${resourceGroup}",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "ca-rabbitmq"
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line+area"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Reinicios de contenedores",
+      "description": "",
+      "id": 24,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 46,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "${subscription}",
+          "azureMonitor": {
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "RestartCount",
+            "aggregation": "Maximum",
+            "timeGrain": "auto",
+            "alias": "{{ resourcename }}",
+            "allowedTimeGrainsMs": [],
+            "dimensionFilters": [],
+            "resources": [
+              {
+                "subscription": "${subscription}",
+                "resourceGroup": "${resourceGroup}",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "ca-taiga"
+              }
+            ]
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "${subscription}",
+          "azureMonitor": {
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "RestartCount",
+            "aggregation": "Maximum",
+            "timeGrain": "auto",
+            "alias": "{{ resourcename }}",
+            "allowedTimeGrainsMs": [],
+            "dimensionFilters": [],
+            "resources": [
+              {
+                "subscription": "${subscription}",
+                "resourceGroup": "${resourceGroup}",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "ca-postgres"
+              }
+            ]
+          }
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "${subscription}",
+          "azureMonitor": {
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "RestartCount",
+            "aggregation": "Maximum",
+            "timeGrain": "auto",
+            "alias": "{{ resourcename }}",
+            "allowedTimeGrainsMs": [],
+            "dimensionFilters": [],
+            "resources": [
+              {
+                "subscription": "${subscription}",
+                "resourceGroup": "${resourceGroup}",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "ca-rabbitmq"
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Ingress: peticiones por categoría de estado (todo el sistema)",
+      "description": "Incluye frontend, WebSockets y adjuntos: todo lo que entra por el gateway público.",
+      "id": 25,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 54,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "${subscription}",
+          "azureMonitor": {
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "Requests",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "alias": "{{ statuscodecategory }}",
+            "allowedTimeGrainsMs": [],
+            "dimensionFilters": [
+              {
+                "dimension": "statusCodeCategory",
+                "operator": "eq",
+                "filters": []
+              }
+            ],
+            "resources": [
+              {
+                "subscription": "${subscription}",
+                "resourceGroup": "${resourceGroup}",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "ca-taiga"
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Réplicas activas",
+      "description": "",
+      "id": 26,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 54,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "${subscription}",
+          "azureMonitor": {
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "Replicas",
+            "aggregation": "Maximum",
+            "timeGrain": "auto",
+            "alias": "{{ resourcename }}",
+            "allowedTimeGrainsMs": [],
+            "dimensionFilters": [],
+            "resources": [
+              {
+                "subscription": "${subscription}",
+                "resourceGroup": "${resourceGroup}",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "ca-taiga"
+              }
+            ]
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "${subscription}",
+          "azureMonitor": {
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "Replicas",
+            "aggregation": "Maximum",
+            "timeGrain": "auto",
+            "alias": "{{ resourcename }}",
+            "allowedTimeGrainsMs": [],
+            "dimensionFilters": [],
+            "resources": [
+              {
+                "subscription": "${subscription}",
+                "resourceGroup": "${resourceGroup}",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "ca-postgres"
+              }
+            ]
+          }
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "${subscription}",
+          "azureMonitor": {
+            "metricNamespace": "microsoft.app/containerapps",
+            "metricName": "Replicas",
+            "aggregation": "Maximum",
+            "timeGrain": "auto",
+            "alias": "{{ resourcename }}",
+            "allowedTimeGrainsMs": [],
+            "dimensionFilters": [],
+            "resources": [
+              {
+                "subscription": "${subscription}",
+                "resourceGroup": "${resourceGroup}",
+                "metricNamespace": "microsoft.app/containerapps",
+                "resourceName": "ca-rabbitmq"
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    }
+  ]
+}

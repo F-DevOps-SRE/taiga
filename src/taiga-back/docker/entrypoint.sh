@@ -18,6 +18,7 @@ chown -R taiga:taiga /taiga-back/static /taiga-back/media
 echo "[Taiga] Starting Gunicorn..."
 
 exec su-exec taiga gunicorn taiga.wsgi:application \
+    --config /taiga-back/docker/gunicorn.conf.py \
     --name taiga_api \
     --bind 0.0.0.0:8000 \
     --workers "${GUNICORN_WORKERS:-3}" \

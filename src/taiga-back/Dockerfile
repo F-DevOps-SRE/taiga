@@ -10,8 +10,9 @@ WORKDIR /build
 RUN apk add --no-cache        build-base        git        libpq-dev
 
 COPY requirements.txt ./
+COPY docker/requirements-otel.txt ./
 
-RUN python -m pip install --upgrade pip wheel     && pip wheel --wheel-dir /wheels -r requirements.txt
+RUN python -m pip install --upgrade pip wheel     && pip wheel --wheel-dir /wheels -r requirements.txt -r requirements-otel.txt
 
 # Taiga's protected storage plugin is not part of requirements.txt.
 # It is required by settings/config.py for protected media.
