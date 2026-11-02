@@ -1,13 +1,17 @@
 # Alertas de Taiga.
 #
-#   alert-taiga-startup-failed        taiga-back no pudo arrancar (migrate/loaddata/collectstatic)
+#   alert-taiga-startup-failed        taiga-back no pudo arrancar (migrate/loaddata/collectstatic)  [demo]
 #   alert-taiga-restarts-<app>        algún contenedor de ca-taiga, ca-postgres o ca-rabbitmq se reinició
-#   alert-taiga-slo-<sli>-fast-burn   burn rate > 14.4 en 1 h y en 5 min (el error budget se acaba en ~2 días)
-#   alert-taiga-slo-<sli>-slow-burn   burn rate > 6 en 6 h y en 30 min (se acaba en ~5 días)
-#   alert-taiga-events-crash          taiga-events terminó por una excepción no controlada
-#   alert-taiga-availability          el test de disponibilidad falla (solo si availability_test_enabled)
+#   alert-taiga-slo-<sli>-fast-burn   burn rate > 14.4 en 1 h y en 5 min (el error budget se acaba en ~2 días)  [demo]
+#   alert-taiga-slo-<sli>-slow-burn   burn rate > 6 en 6 h y en 30 min (se acaba en ~5 días)  [demo]
+#   alert-taiga-events-crash          taiga-events terminó por una excepción no controlada  [demo]
+#   alert-taiga-availability          el test de disponibilidad falla  [demo]
 #
 # <sli> es login, api o latency (los tres SLIs del informe de la entrega 3).
+#
+# [demo]: solo existen con availability_test_enabled = true. Son las que cuestan
+# (alertas de logs ~$12.60/mes y el test de disponibilidad); las de reinicios son
+# alertas de métricas dentro de la capa gratuita y quedan siempre.
 #
 # Notifican por correo si se define alert_email; si no, solo quedan en
 # Azure Monitor > Alerts.
@@ -66,6 +70,7 @@ resource "azurerm_monitor_action_group" "alerts" {
 
 # --- Arranque fallido de taiga-back (lo registra docker/startup.py) ---
 resource "azurerm_monitor_scheduled_query_rules_alert_v2" "startup_failed" {
+  count                = var.availability_test_enabled ? 1 : 0
   name                 = "alert-taiga-startup-failed"
   description          = "taiga-back falló en migrate, loaddata o collectstatic. customDimensions dice el paso y la migración."
   resource_group_name  = var.resource_group_name
@@ -127,7 +132,7 @@ resource "azurerm_monitor_metric_alert" "restarts" {
 # Con menos de 20 peticiones en la ventana larga no se evalúa: con tráfico de
 # demo, 1 error sería un 50 %.
 resource "azurerm_monitor_scheduled_query_rules_alert_v2" "slo_burn" {
-  for_each = local.slo_alerts
+  for_each = var.availability_test_enabled ? local.slo_alerts : {}
 
   name                 = "alert-taiga-slo-${each.value.sli}-${each.value.burn}-burn"
   description          = "${local.slis[each.value.sli].title}: burn rate > ${local.burn_windows[each.value.burn].factor} en ${local.burn_windows[each.value.burn].long} y en ${local.burn_windows[each.value.burn].short}. A este ritmo el error budget de 30 días se acaba en ${local.burn_windows[each.value.burn].days}."
@@ -163,6 +168,7 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "slo_burn" {
 
 # --- Caída de taiga-events (lo registra src/telemetry.js) ---
 resource "azurerm_monitor_scheduled_query_rules_alert_v2" "events_crash" {
+  count                = var.availability_test_enabled ? 1 : 0
   name                 = "alert-taiga-events-crash"
   description          = "taiga-events terminó por una excepción no controlada (p. ej. se cortó la conexión con RabbitMQ)."
   resource_group_name  = var.resource_group_name
@@ -243,4 +249,15 @@ resource "azurerm_monitor_metric_alert" "availability" {
       action_group_id = action.value
     }
   }
+}
+
+# Antes no tenían count: evita que Terraform las borre y recree al pasar a [0].
+moved {
+  from = azurerm_monitor_scheduled_query_rules_alert_v2.startup_failed
+  to   = azurerm_monitor_scheduled_query_rules_alert_v2.startup_failed[0]
+}
+
+moved {
+  from = azurerm_monitor_scheduled_query_rules_alert_v2.events_crash
+  to   = azurerm_monitor_scheduled_query_rules_alert_v2.events_crash[0]
 }

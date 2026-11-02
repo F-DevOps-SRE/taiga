@@ -64,7 +64,8 @@ variable "taiga_protected_commit" {
 }
 
 # Alertas. En el workflow: secreto ALERT_EMAIL y variable de repositorio
-# AVAILABILITY_TEST_ENABLED ("true" para las demos).
+# AVAILABILITY_TEST_ENABLED ("true" para las demos: enciende el test de
+# disponibilidad y todas las alertas con costo; ver modules/container_apps/alerts.tf).
 variable "alert_email" {
   type    = string
   default = ""

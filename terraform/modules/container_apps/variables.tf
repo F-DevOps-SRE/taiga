@@ -101,5 +101,5 @@ variable "alert_email" {
 variable "availability_test_enabled" {
   type        = bool
   default     = false
-  description = "Crea el test de disponibilidad (cada 5 min) y su alerta. Pensado para las demos"
+  description = "Modo demo: crea el test de disponibilidad y las alertas de logs (las que cuestan). Apagado fuera de las demos"
 }

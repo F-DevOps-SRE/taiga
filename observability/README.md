@@ -90,7 +90,7 @@ Definidas en `terraform/modules/container_apps/alerts.tf`:
 | `alert-taiga-availability` (sev 1) | el test de disponibilidad de `/api/v1/` falla desde 2 o más ubicaciones |
 
 - **Correo:** secreto de GitHub `ALERT_EMAIL`. Sin él no se crea el action group y las alertas solo se ven en *Azure Monitor > Alerts*.
-- **Test de disponibilidad (bajo demanda):** variable de repositorio `AVAILABILITY_TEST_ENABLED = true` y volver a correr el workflow de Terraform. Consulta `/api/v1/` cada 5 min desde 3 ubicaciones, por lo que mantiene `ca-taiga` despierto: activarlo solo para las demos.
+- **Modo demo (bajo demanda):** variable de repositorio `AVAILABILITY_TEST_ENABLED = true` y volver a desplegar. Crea el test de disponibilidad y todas las alertas que cuestan: `startup-failed`, `slo-*-burn`, `events-crash` (alertas de logs, ~$12.60/mes) y `availability`. El test consulta `/api/v1/` cada 5 min desde 3 ubicaciones, por lo que mantiene `ca-taiga` despierto. Con la variable en `false` solo quedan las alertas de reinicios (alertas de métricas, dentro de la capa gratuita).
 
 ## Política de error budget
 
