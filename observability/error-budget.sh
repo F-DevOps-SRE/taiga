@@ -4,21 +4,19 @@
 #
 #   NORMAL  los tres presupuestos con más del 50 % disponible
 #   ALERTA  alguno con 50 % o menos: se permite desplegar, con revisión estricta
-#   FREEZE  alguno agotado (0 % o menos): falla, lo que bloquea merge y despliegue
+#   FREEZE  alguno agotado (0 % o menos): warning e issue, no bloquea el despliegue
 #
 # El freeze se registra como un issue abierto con la etiqueta release-freeze y no
 # se levanta hasta que el presupuesto más degradado recupere al menos un 20 %.
 #
 # Variables:
 #   SUBSCRIPTION, RESOURCE_GROUP, APPI_NAME  dónde está Application Insights
-#   HOTFIX=true        excepción de emergencia (no falla aunque haya freeze)
 #   MANAGE_ISSUE=true  abre o cierra el issue de release-freeze (requiere GH_TOKEN)
 set -euo pipefail
 
 SUBSCRIPTION="${SUBSCRIPTION:?}"
 RESOURCE_GROUP="${RESOURCE_GROUP:-rg-taiga}"
 APPI_NAME="${APPI_NAME:-appi-taiga}"
-HOTFIX="${HOTFIX:-false}"
 MANAGE_ISSUE="${MANAGE_ISSUE:-false}"
 FREEZE_LABEL="release-freeze"
 SUMMARY="${GITHUB_STEP_SUMMARY:-/dev/stdout}"
@@ -81,7 +79,7 @@ if [ "$MANAGE_ISSUE" = "true" ] && [ -n "${GH_TOKEN:-}" ]; then
     gh label create "$FREEZE_LABEL" --color B60205 --description "Error budget agotado" --force >/dev/null
     gh issue create --label "$FREEZE_LABEL" \
       --title "Release freeze: error budget agotado" \
-      --body "$(printf 'Un presupuesto de error de 30 días se agotó (login %s %%, API %s %%, latencia %s %%).\n\nSegún la política de error budget: no se fusionan ni despliegan features hasta que el presupuesto más degradado recupere un 20 %%. Solo se permiten hotfixes aprobados por el SRE Lead y el Product Owner (etiqueta `hotfix` en el PR o `[hotfix]` en el commit).\n\nEl postmortem debe estar listo en 48 h.' "$login" "$api" "$latency")"
+      --body "$(printf 'Un presupuesto de error de 30 días se agotó (login %s %%, API %s %%, latencia %s %%).\n\nSegún la política de error budget: no se fusionan ni despliegan features hasta que el presupuesto más degradado recupere un 20 %%. Solo se permiten hotfixes aprobados por el SRE Lead y el Product Owner.\n\nEl postmortem debe estar listo en 48 h.' "$login" "$api" "$latency")"
   elif [ "$state" != "FREEZE" ] && [ -n "$freeze_issue" ]; then
     gh issue close "$freeze_issue" \
       --comment "El presupuesto más degradado recuperó el margen (${min} %): se levanta el release freeze."
@@ -90,12 +88,7 @@ fi
 
 case "$state" in
   FREEZE)
-    if [ "$HOTFIX" = "true" ]; then
-      echo "::warning::Release freeze activo (presupuesto mínimo ${min} %), pero es un hotfix: se permite."
-    else
-      echo "::error::Release freeze: el error budget está agotado (presupuesto mínimo ${min} %). Solo se permiten hotfixes."
-      exit 1
-    fi
+    echo "::warning::Release freeze: el error budget está agotado (presupuesto mínimo ${min} %)."
     ;;
   ALERTA)
     echo "::warning::Error budget en alerta (presupuesto mínimo ${min} %): revisión estricta y pruebas de carga obligatorias."

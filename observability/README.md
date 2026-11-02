@@ -100,12 +100,10 @@ Definidas en `terraform/modules/container_apps/alerts.tf`:
 | --- | --- | --- |
 | NORMAL | los tres > 50 % | nada |
 | ALERTA | alguno <= 50 % | aviso en el check: revisión estricta y pruebas de carga en los PRs |
-| FREEZE | alguno <= 0 % | falla el check *Error budget* del PR y no corre el plan/apply de Terraform |
+| FREEZE | alguno <= 0 % | warning y issue `release-freeze` (no bloquea merges ni despliegues) |
 
 - `.github/workflows/error-budget.yml` corre cada hora: con FREEZE abre un issue con la etiqueta `release-freeze` y lo cierra cuando el presupuesto más degradado vuelve a tener al menos un 20 %. Mientras el issue esté abierto, el freeze sigue aunque el presupuesto ya sea positivo.
-- `terraform-ci.yml` lo llama en cada PR y en cada push a `main`, antes del plan.
-- Hotfix: etiqueta `hotfix` en el PR o `[hotfix]` en el mensaje del commit.
-- Para que el check bloquee el merge, *Error budget* debe estar como check obligatorio en la protección de `main`. La aprobación conjunta del SRE Lead y el Product Owner se configura con revisores obligatorios en esa misma protección.
+- Es solo informativo: `terraform-ci.yml` ya no lo ejecuta antes del plan, así que un freeze no bloquea el despliegue.
 
 ## Limitaciones
 

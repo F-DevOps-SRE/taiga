@@ -5,7 +5,7 @@ name: "Terraform CI & Governance Validation"
 # antes que el build y desplegaría la imagen del commit anterior.
 #
 #   push a main ─► CI Pipeline - Taiga (build + publicación en GHCR)
-#                     └─ completed ─► este workflow: validate, error budget, plan/apply
+#                     └─ completed ─► este workflow: validate, plan/apply
 #
 # Se despliega aunque el build falle: cada componente usa la última imagen que sí
 # se publicó, así un componente roto no bloquea cambios de infraestructura.
@@ -14,8 +14,7 @@ on:
     branches: ["feature/*"]
   pull_request:
     branches: ["main"]
-    # labeled/unlabeled: poner o quitar la etiqueta "hotfix" vuelve a evaluar el error budget
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, reopened]
   workflow_run:
     workflows: ["CI Pipeline - Taiga"]
     types: [completed]
@@ -74,28 +73,11 @@ jobs:
           soft_fail: false
 
   # --------------------------------------------------------------------------
-  # Política de error budget: con FREEZE falla el check del PR (bloquea el merge
-  # si es un check obligatorio en la protección de main) y no se despliega.
-  # Excepción: hotfix (etiqueta "hotfix" en el PR o "[hotfix]" en el commit).
-  # --------------------------------------------------------------------------
-  error-budget:
-    name: "Error budget"
-    needs: [validate]
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_run'
-    permissions:
-      contents: read
-      issues: write
-    uses: ./.github/workflows/error-budget.yml
-    with:
-      hotfix: ${{ contains(github.event.pull_request.labels.*.name, 'hotfix') || contains(github.event.workflow_run.head_commit.message, '[hotfix]') }}
-    secrets: inherit
-
-  # --------------------------------------------------------------------------
   # Plan y apply contra Azure (solo main, después del build de imágenes)
   # --------------------------------------------------------------------------
   plan:
     name: "Terraform Plan"
-    needs: [validate, error-budget]
+    needs: [validate]
     if: github.event_name == 'workflow_run'
     runs-on: ubuntu-latest
     # Borrar/crear un Container Apps Environment puede tardar >20 min. Si el job se

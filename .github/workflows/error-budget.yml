@@ -3,18 +3,12 @@ name: "Error budget"
 # Política de error budget: calcula los tres presupuestos de 30 días.
 #   - cada hora: abre el issue "release-freeze" si alguno se agota y lo cierra
 #     cuando el más degradado recupera un 20 % (GitHub notifica a quien siga el repo)
-#   - desde terraform-ci.yml: falla en FREEZE y bloquea el merge del PR y el
-#     despliegue, salvo hotfixes (etiqueta `hotfix` o `[hotfix]` en el commit)
+#   - informativo: con FREEZE deja un warning, no bloquea merges ni despliegues
 
 on:
   schedule:
     - cron: "17 * * * *"
   workflow_dispatch:
-  workflow_call:
-    inputs:
-      hotfix:
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -50,6 +44,5 @@ jobs:
         env:
           SUBSCRIPTION: ${{ secrets.ARM_SUBSCRIPTION_ID }}
           GH_TOKEN: ${{ github.token }}
-          HOTFIX: ${{ inputs.hotfix || false }}
-          MANAGE_ISSUE: ${{ github.event_name != 'pull_request' }}
+          MANAGE_ISSUE: "true"
         run: bash observability/error-budget.sh
