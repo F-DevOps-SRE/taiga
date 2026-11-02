@@ -87,8 +87,10 @@ resource "azurerm_container_app" "postgres" {
   revision_mode                = "Single"
 
   template {
-    # Siempre encendido: una app TCP no despierta desde cero con tráfico.
-    min_replicas = 0
+    # Siempre encendido: no tiene volumen, si escala a cero vuelve con la base
+    # vacía (o la cola sin vhost) y taiga-back, ya migrado, falla con
+    # "relation ... does not exist". Además una app TCP no despierta sola.
+    min_replicas = 1
     max_replicas = 1
 
     container {
@@ -172,8 +174,10 @@ resource "azurerm_container_app" "rabbitmq" {
   revision_mode                = "Single"
 
   template {
-    # Siempre encendido: una app TCP no despierta desde cero con tráfico.
-    min_replicas = 0
+    # Siempre encendido: no tiene volumen, si escala a cero vuelve con la base
+    # vacía (o la cola sin vhost) y taiga-back, ya migrado, falla con
+    # "relation ... does not exist". Además una app TCP no despierta sola.
+    min_replicas = 1
     max_replicas = 1
 
     container {
