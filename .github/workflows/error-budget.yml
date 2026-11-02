@@ -1,0 +1,55 @@
+name: "Error budget"
+
+# Política de error budget: calcula los tres presupuestos de 30 días.
+#   - cada hora: abre el issue "release-freeze" si alguno se agota y lo cierra
+#     cuando el más degradado recupera un 20 % (GitHub notifica a quien siga el repo)
+#   - desde terraform-ci.yml: falla en FREEZE y bloquea el merge del PR y el
+#     despliegue, salvo hotfixes (etiqueta `hotfix` o `[hotfix]` en el commit)
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      hotfix:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    name: "Error budget (release freeze)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login (service principal)
+        id: login
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+        run: |
+          # PRs desde forks no reciben secretos: no se puede consultar.
+          if [ -z "$ARM_CLIENT_ID" ]; then
+            echo "::warning::Sin credenciales de Azure: no se evalúa el error budget."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID" -o none
+          az config set extension.use_dynamic_install=yes_without_prompt -o none
+
+      - name: Evaluar la política
+        if: steps.login.outputs.skip != 'true'
+        env:
+          SUBSCRIPTION: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          GH_TOKEN: ${{ github.token }}
+          HOTFIX: ${{ inputs.hotfix || false }}
+          MANAGE_ISSUE: ${{ github.event_name != 'pull_request' }}
+        run: bash observability/error-budget.sh

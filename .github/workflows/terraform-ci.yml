@@ -5,6 +5,8 @@ on:
     branches: ["main", "feature/*"]
   pull_request:
     branches: ["main"]
+    # labeled/unlabeled: poner o quitar la etiqueta "hotfix" vuelve a evaluar el error budget
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 jobs:
   validate:
@@ -55,11 +57,27 @@ jobs:
           soft_fail: false
 
   # --------------------------------------------------------------------------
-  # Plan contra Azure (solo push a main). Todavía NO se aplica.
+  # Política de error budget: con FREEZE falla el check del PR (bloquea el merge
+  # si es un check obligatorio en la protección de main) y no se despliega.
+  # Excepción: hotfix (etiqueta "hotfix" en el PR o "[hotfix]" en el commit).
+  # --------------------------------------------------------------------------
+  error-budget:
+    name: "Error budget"
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/error-budget.yml
+    with:
+      hotfix: ${{ contains(github.event.pull_request.labels.*.name, 'hotfix') || contains(github.event.head_commit.message, '[hotfix]') }}
+    secrets: inherit
+
+  # --------------------------------------------------------------------------
+  # Plan y apply contra Azure (solo push a main)
   # --------------------------------------------------------------------------
   plan:
     name: "Terraform Plan"
-    needs: validate
+    needs: [validate, error-budget]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # Borrar/crear un Container Apps Environment puede tardar >20 min. Si el job se

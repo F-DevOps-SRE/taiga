@@ -62,8 +62,25 @@
       },
       {
         "type": "textbox",
-        "name": "slo_availability",
-        "label": "SLO disponibilidad (%)",
+        "name": "slo_login",
+        "label": "SLO login (%)",
+        "query": "99.9",
+        "current": {
+          "text": "99.9",
+          "value": "99.9"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "99.9",
+            "value": "99.9"
+          }
+        ]
+      },
+      {
+        "type": "textbox",
+        "name": "slo_api",
+        "label": "SLO API de consultas (%)",
         "query": "99.5",
         "current": {
           "text": "99.5",
@@ -81,16 +98,16 @@
         "type": "textbox",
         "name": "slo_latency_ms",
         "label": "Umbral latencia (ms)",
-        "query": "1000",
+        "query": "300",
         "current": {
-          "text": "1000",
-          "value": "1000"
+          "text": "300",
+          "value": "300"
         },
         "options": [
           {
             "selected": true,
-            "text": "1000",
-            "value": "1000"
+            "text": "300",
+            "value": "300"
           }
         ]
       },
@@ -146,7 +163,7 @@
     },
     {
       "type": "text",
-      "title": "Definición de SLOs",
+      "title": "Definición de SLOs (ventana: 30 días rodantes)",
       "id": 2,
       "gridPos": {
         "x": 0,
@@ -156,14 +173,14 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**SLO de disponibilidad:** `$slo_availability%` de las peticiones a la API responden sin error 5xx.\n\n**SLO de latencia:** `$slo_latency_target%` de las peticiones responden en menos de `$slo_latency_ms ms`.\n\n**Error budget** = 1 − SLO. *Restante* = 1 − (errores observados / errores permitidos).\n\n**Burn rate** = tasa de error / (1 − SLO). 1× consume el presupuesto justo en 30 días; 14.4× en 1 h o 6× en 6 h son los umbrales de alerta rápida del *SRE Workbook*.\n\nFuente: Application Insights `appi-taiga` (OpenTelemetry de taiga-back)."
+        "content": "**SLI 1 · Login:** `$slo_login %` de las peticiones a `/api/v1/auth` sin 5xx (los 4xx no cuentan).\n\n**SLI 2 · API de consultas:** `$slo_api %` de los `GET` a `/userstories`, `/tasks`, `/issues` y `/epics` con `assigned_to`/`assigned_users` sin 5xx ni 429 (los demás 4xx no cuentan).\n\n**SLI 3 · Latencia:** `$slo_latency_target %` de las peticiones exitosas a `/api/v1/` en `<= $slo_latency_ms ms`.\n\n**Error budget** = 1 − SLO. *Restante* = 1 − (eventos malos / eventos permitidos).\n\n**Burn rate** = tasa de eventos malos / (1 − SLO). Alertas multiventana: 14.4× en 1 h y 5 min, 6× en 6 h y 30 min.\n\nFuente: Application Insights `appi-taiga` (OpenTelemetry de taiga-back)."
       }
     },
     {
       "type": "stat",
-      "title": "Disponibilidad (SLI 30d)",
-      "description": "Porcentaje de peticiones sin 5xx en los últimos 30 días. Verde si cumple el SLO.",
-      "id": 3,
+      "title": "SLI 1 · Login (30d)",
+      "description": "SLI de los últimos 30 días. Verde si cumple el SLO ($slo_login %).",
+      "id": 100,
       "datasource": {
         "type": "grafana-azure-monitor-datasource",
         "uid": "${ds}"
@@ -183,7 +200,7 @@
           },
           "queryType": "Azure Log Analytics",
           "azureLogAnalytics": {
-            "query": "requests\n| where $__timeFilter(timestamp)\n| summarize total = sum(itemCount), bad = sumif(itemCount, toint(resultCode) >= 500)\n| project availability = iff(total == 0, 100.0, 100.0 * (1.0 - todouble(bad) / total))",
+            "query": "requests\n| where $__timeFilter(timestamp) and cloud_RoleName == \"taiga-back\"\n| extend path = tostring(parse_url(url).Path), code = toint(resultCode)\n| where path startswith \"/api/v1/auth\" and not(code between (400 .. 499))\n| summarize total = sum(itemCount), bad = sumif(itemCount, code >= 500)\n| where total > 0\n| project sli = 100.0 * (1.0 - todouble(bad) / total)",
             "resources": [
               "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
             ],
@@ -204,7 +221,7 @@
               },
               {
                 "color": "green",
-                "value": 99.5
+                "value": "$slo_login"
               }
             ]
           }
@@ -226,10 +243,10 @@
       "timeFrom": "30d"
     },
     {
-      "type": "gauge",
-      "title": "Error budget restante (disponibilidad)",
-      "description": "Fracción del presupuesto de errores de 30 días que aún no se ha consumido.",
-      "id": 4,
+      "type": "stat",
+      "title": "Error budget restante · Login",
+      "description": "Normal > 50 %, Alerta <= 50 %, Freeze <= 0 % (política de error budget).",
+      "id": 101,
       "datasource": {
         "type": "grafana-azure-monitor-datasource",
         "uid": "${ds}"
@@ -237,8 +254,8 @@
       "gridPos": {
         "x": 10,
         "y": 1,
-        "w": 5,
-        "h": 10
+        "w": 4,
+        "h": 5
       },
       "targets": [
         {
@@ -249,7 +266,7 @@
           },
           "queryType": "Azure Log Analytics",
           "azureLogAnalytics": {
-            "query": "requests\n| where $__timeFilter(timestamp)\n| summarize total = sum(itemCount), bad = sumif(itemCount, toint(resultCode) >= 500)\n| project budget_remaining = iff(total == 0, 100.0, 100.0 * (1.0 - (todouble(bad) / total) / (1.0 - ($slo_availability / 100.0))))",
+            "query": "requests\n| where $__timeFilter(timestamp) and cloud_RoleName == \"taiga-back\"\n| extend path = tostring(parse_url(url).Path), code = toint(resultCode)\n| where path startswith \"/api/v1/auth\" and not(code between (400 .. 499))\n| summarize total = sum(itemCount), bad = sumif(itemCount, code >= 500)\n| where total > 0\n| project budget_restante = 100.0 * (1.0 - (todouble(bad) / total) / (1.0 - ($slo_login / 100.0)))",
             "resources": [
               "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
             ],
@@ -270,16 +287,14 @@
               },
               {
                 "color": "orange",
-                "value": 25
+                "value": 0.0001
               },
               {
                 "color": "green",
-                "value": 50
+                "value": 50.0001
               }
             ]
-          },
-          "min": 0,
-          "max": 100
+          }
         },
         "overrides": []
       },
@@ -299,15 +314,15 @@
     },
     {
       "type": "stat",
-      "title": "Errores 5xx que aún caben",
-      "description": "Cuántas peticiones fallidas más se pueden tolerar en la ventana sin romper el SLO.",
-      "id": 5,
+      "title": "Errores 5xx de login que aún caben",
+      "description": "Eventos malos que aún se toleran en la ventana de 30 días sin romper el SLO.",
+      "id": 102,
       "datasource": {
         "type": "grafana-azure-monitor-datasource",
         "uid": "${ds}"
       },
       "gridPos": {
-        "x": 15,
+        "x": 14,
         "y": 1,
         "w": 4,
         "h": 5
@@ -321,7 +336,7 @@
           },
           "queryType": "Azure Log Analytics",
           "azureLogAnalytics": {
-            "query": "requests\n| where $__timeFilter(timestamp)\n| summarize total = sum(itemCount), bad = sumif(itemCount, toint(resultCode) >= 500)\n| project errores_restantes = round(total * (1.0 - ($slo_availability / 100.0)) - bad)",
+            "query": "requests\n| where $__timeFilter(timestamp) and cloud_RoleName == \"taiga-back\"\n| extend path = tostring(parse_url(url).Path), code = toint(resultCode)\n| where path startswith \"/api/v1/auth\" and not(code between (400 .. 499))\n| summarize total = sum(itemCount), bad = sumif(itemCount, code >= 500)\n| where total > 0\n| project restantes = round(total * (1.0 - ($slo_login / 100.0)) - bad)",
             "resources": [
               "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
             ],
@@ -366,16 +381,16 @@
     {
       "type": "stat",
       "title": "Burn rate 1h",
-      "description": "Velocidad de consumo del presupuesto en la última hora. 14.4x agota el 2% del presupuesto mensual en 1 h.",
-      "id": 6,
+      "description": "Tasa de eventos malos / (1 - SLO). 1x agota el presupuesto justo en 30 días.",
+      "id": 103,
       "datasource": {
         "type": "grafana-azure-monitor-datasource",
         "uid": "${ds}"
       },
       "gridPos": {
-        "x": 19,
+        "x": 18,
         "y": 1,
-        "w": 5,
+        "w": 3,
         "h": 5
       },
       "targets": [
@@ -387,7 +402,7 @@
           },
           "queryType": "Azure Log Analytics",
           "azureLogAnalytics": {
-            "query": "requests\n| where $__timeFilter(timestamp)\n| summarize total = sum(itemCount), bad = sumif(itemCount, toint(resultCode) >= 500)\n| project burn_rate = iff(total == 0, 0.0, (todouble(bad) / total) / (1.0 - ($slo_availability / 100.0)))",
+            "query": "requests\n| where $__timeFilter(timestamp) and cloud_RoleName == \"taiga-back\"\n| extend path = tostring(parse_url(url).Path), code = toint(resultCode)\n| where path startswith \"/api/v1/auth\" and not(code between (400 .. 499))\n| summarize total = sum(itemCount), bad = sumif(itemCount, code >= 500)\n| where total > 0\n| project burn_rate = (todouble(bad) / total) / (1.0 - ($slo_login / 100.0))",
             "resources": [
               "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
             ],
@@ -435,153 +450,17 @@
     },
     {
       "type": "stat",
-      "title": "Latencia (SLI 30d)",
-      "description": "Porcentaje de peticiones bajo el umbral de latencia del SLO.",
-      "id": 7,
-      "datasource": {
-        "type": "grafana-azure-monitor-datasource",
-        "uid": "${ds}"
-      },
-      "gridPos": {
-        "x": 6,
-        "y": 6,
-        "w": 4,
-        "h": 5
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-azure-monitor-datasource",
-            "uid": "${ds}"
-          },
-          "queryType": "Azure Log Analytics",
-          "azureLogAnalytics": {
-            "query": "requests\n| where $__timeFilter(timestamp)\n| summarize total = sum(itemCount), fast = sumif(itemCount, duration <= $slo_latency_ms)\n| project latency_sli = iff(total == 0, 100.0, 100.0 * todouble(fast) / total)",
-            "resources": [
-              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
-            ],
-            "resultFormat": "table"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "decimals": 2,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 95
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "background",
-        "graphMode": "none",
-        "textMode": "value"
-      },
-      "timeFrom": "30d"
-    },
-    {
-      "type": "stat",
-      "title": "Error budget restante (latencia)",
-      "description": "",
-      "id": 8,
-      "datasource": {
-        "type": "grafana-azure-monitor-datasource",
-        "uid": "${ds}"
-      },
-      "gridPos": {
-        "x": 15,
-        "y": 6,
-        "w": 4,
-        "h": 5
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-azure-monitor-datasource",
-            "uid": "${ds}"
-          },
-          "queryType": "Azure Log Analytics",
-          "azureLogAnalytics": {
-            "query": "requests\n| where $__timeFilter(timestamp)\n| summarize total = sum(itemCount), slow = sumif(itemCount, duration > $slo_latency_ms)\n| project latency_budget = iff(total == 0, 100.0, 100.0 * (1.0 - (todouble(slow) / total) / (1.0 - $slo_latency_target / 100.0)))",
-            "resources": [
-              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
-            ],
-            "resultFormat": "table"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "decimals": 1,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 25
-              },
-              {
-                "color": "green",
-                "value": 50
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "background",
-        "graphMode": "none",
-        "textMode": "value"
-      },
-      "timeFrom": "30d"
-    },
-    {
-      "type": "stat",
       "title": "Burn rate 6h",
-      "description": "",
-      "id": 9,
+      "description": "Tasa de eventos malos / (1 - SLO). 1x agota el presupuesto justo en 30 días.",
+      "id": 104,
       "datasource": {
         "type": "grafana-azure-monitor-datasource",
         "uid": "${ds}"
       },
       "gridPos": {
-        "x": 19,
-        "y": 6,
-        "w": 5,
+        "x": 21,
+        "y": 1,
+        "w": 3,
         "h": 5
       },
       "targets": [
@@ -593,7 +472,7 @@
           },
           "queryType": "Azure Log Analytics",
           "azureLogAnalytics": {
-            "query": "requests\n| where $__timeFilter(timestamp)\n| summarize total = sum(itemCount), bad = sumif(itemCount, toint(resultCode) >= 500)\n| project burn_rate = iff(total == 0, 0.0, (todouble(bad) / total) / (1.0 - ($slo_availability / 100.0)))",
+            "query": "requests\n| where $__timeFilter(timestamp) and cloud_RoleName == \"taiga-back\"\n| extend path = tostring(parse_url(url).Path), code = toint(resultCode)\n| where path startswith \"/api/v1/auth\" and not(code between (400 .. 499))\n| summarize total = sum(itemCount), bad = sumif(itemCount, code >= 500)\n| where total > 0\n| project burn_rate = (todouble(bad) / total) / (1.0 - ($slo_login / 100.0))",
             "resources": [
               "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
             ],
@@ -640,10 +519,694 @@
       "timeFrom": "6h"
     },
     {
-      "type": "timeseries",
-      "title": "Error budget restante en el tiempo (30d)",
-      "description": "Consumo acumulado del presupuesto de disponibilidad a lo largo de la ventana de 30 días.",
-      "id": 10,
+      "type": "stat",
+      "title": "SLI 2 · API de consultas (30d)",
+      "description": "SLI de los últimos 30 días. Verde si cumple el SLO ($slo_api %).",
+      "id": 110,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 6,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp) and cloud_RoleName == \"taiga-back\"\n| extend path = tostring(parse_url(url).Path), code = toint(resultCode)\n| where name startswith \"GET\" and path matches regex @\"^/api/v1/(userstories|tasks|issues|epics)/?$\" and url has_any (\"assigned_to\", \"assigned_users\") and (not(code between (400 .. 499)) or code == 429)\n| summarize total = sum(itemCount), bad = sumif(itemCount, code >= 500 or code == 429)\n| where total > 0\n| project sli = 100.0 * (1.0 - todouble(bad) / total)",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": "$slo_api"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "timeFrom": "30d"
+    },
+    {
+      "type": "stat",
+      "title": "Error budget restante · API de consultas",
+      "description": "Normal > 50 %, Alerta <= 50 %, Freeze <= 0 % (política de error budget).",
+      "id": 111,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 10,
+        "y": 6,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp) and cloud_RoleName == \"taiga-back\"\n| extend path = tostring(parse_url(url).Path), code = toint(resultCode)\n| where name startswith \"GET\" and path matches regex @\"^/api/v1/(userstories|tasks|issues|epics)/?$\" and url has_any (\"assigned_to\", \"assigned_users\") and (not(code between (400 .. 499)) or code == 429)\n| summarize total = sum(itemCount), bad = sumif(itemCount, code >= 500 or code == 429)\n| where total > 0\n| project budget_restante = 100.0 * (1.0 - (todouble(bad) / total) / (1.0 - ($slo_api / 100.0)))",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.0001
+              },
+              {
+                "color": "green",
+                "value": 50.0001
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "timeFrom": "30d"
+    },
+    {
+      "type": "stat",
+      "title": "Errores 5xx/429 que aún caben",
+      "description": "Eventos malos que aún se toleran en la ventana de 30 días sin romper el SLO.",
+      "id": 112,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 14,
+        "y": 6,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp) and cloud_RoleName == \"taiga-back\"\n| extend path = tostring(parse_url(url).Path), code = toint(resultCode)\n| where name startswith \"GET\" and path matches regex @\"^/api/v1/(userstories|tasks|issues|epics)/?$\" and url has_any (\"assigned_to\", \"assigned_users\") and (not(code between (400 .. 499)) or code == 429)\n| summarize total = sum(itemCount), bad = sumif(itemCount, code >= 500 or code == 429)\n| where total > 0\n| project restantes = round(total * (1.0 - ($slo_api / 100.0)) - bad)",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "timeFrom": "30d"
+    },
+    {
+      "type": "stat",
+      "title": "Burn rate 1h",
+      "description": "Tasa de eventos malos / (1 - SLO). 1x agota el presupuesto justo en 30 días.",
+      "id": 113,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 6,
+        "w": 3,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp) and cloud_RoleName == \"taiga-back\"\n| extend path = tostring(parse_url(url).Path), code = toint(resultCode)\n| where name startswith \"GET\" and path matches regex @\"^/api/v1/(userstories|tasks|issues|epics)/?$\" and url has_any (\"assigned_to\", \"assigned_users\") and (not(code between (400 .. 499)) or code == 429)\n| summarize total = sum(itemCount), bad = sumif(itemCount, code >= 500 or code == 429)\n| where total > 0\n| project burn_rate = (todouble(bad) / total) / (1.0 - ($slo_api / 100.0))",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "timeFrom": "1h"
+    },
+    {
+      "type": "stat",
+      "title": "Burn rate 6h",
+      "description": "Tasa de eventos malos / (1 - SLO). 1x agota el presupuesto justo en 30 días.",
+      "id": 114,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 21,
+        "y": 6,
+        "w": 3,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp) and cloud_RoleName == \"taiga-back\"\n| extend path = tostring(parse_url(url).Path), code = toint(resultCode)\n| where name startswith \"GET\" and path matches regex @\"^/api/v1/(userstories|tasks|issues|epics)/?$\" and url has_any (\"assigned_to\", \"assigned_users\") and (not(code between (400 .. 499)) or code == 429)\n| summarize total = sum(itemCount), bad = sumif(itemCount, code >= 500 or code == 429)\n| where total > 0\n| project burn_rate = (todouble(bad) / total) / (1.0 - ($slo_api / 100.0))",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 6
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "timeFrom": "6h"
+    },
+    {
+      "type": "stat",
+      "title": "SLI 3 · Latencia (30d)",
+      "description": "SLI de los últimos 30 días. Verde si cumple el SLO ($slo_latency_target %).",
+      "id": 120,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 11,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp) and cloud_RoleName == \"taiga-back\"\n| extend path = tostring(parse_url(url).Path), code = toint(resultCode)\n| where path startswith \"/api/v1/\" and code < 400\n| summarize total = sum(itemCount), bad = sumif(itemCount, duration > $slo_latency_ms)\n| where total > 0\n| project sli = 100.0 * (1.0 - todouble(bad) / total)",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": "$slo_latency_target"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "timeFrom": "30d"
+    },
+    {
+      "type": "stat",
+      "title": "Error budget restante · Latencia",
+      "description": "Normal > 50 %, Alerta <= 50 %, Freeze <= 0 % (política de error budget).",
+      "id": 121,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 10,
+        "y": 11,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp) and cloud_RoleName == \"taiga-back\"\n| extend path = tostring(parse_url(url).Path), code = toint(resultCode)\n| where path startswith \"/api/v1/\" and code < 400\n| summarize total = sum(itemCount), bad = sumif(itemCount, duration > $slo_latency_ms)\n| where total > 0\n| project budget_restante = 100.0 * (1.0 - (todouble(bad) / total) / (1.0 - ($slo_latency_target / 100.0)))",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.0001
+              },
+              {
+                "color": "green",
+                "value": 50.0001
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "timeFrom": "30d"
+    },
+    {
+      "type": "stat",
+      "title": "Peticiones lentas que aún caben",
+      "description": "Eventos malos que aún se toleran en la ventana de 30 días sin romper el SLO.",
+      "id": 122,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 14,
+        "y": 11,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp) and cloud_RoleName == \"taiga-back\"\n| extend path = tostring(parse_url(url).Path), code = toint(resultCode)\n| where path startswith \"/api/v1/\" and code < 400\n| summarize total = sum(itemCount), bad = sumif(itemCount, duration > $slo_latency_ms)\n| where total > 0\n| project restantes = round(total * (1.0 - ($slo_latency_target / 100.0)) - bad)",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "timeFrom": "30d"
+    },
+    {
+      "type": "stat",
+      "title": "Burn rate 1h",
+      "description": "Tasa de eventos malos / (1 - SLO). 1x agota el presupuesto justo en 30 días.",
+      "id": 123,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 11,
+        "w": 3,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp) and cloud_RoleName == \"taiga-back\"\n| extend path = tostring(parse_url(url).Path), code = toint(resultCode)\n| where path startswith \"/api/v1/\" and code < 400\n| summarize total = sum(itemCount), bad = sumif(itemCount, duration > $slo_latency_ms)\n| where total > 0\n| project burn_rate = (todouble(bad) / total) / (1.0 - ($slo_latency_target / 100.0))",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "timeFrom": "1h"
+    },
+    {
+      "type": "stat",
+      "title": "Burn rate 6h",
+      "description": "Tasa de eventos malos / (1 - SLO). 1x agota el presupuesto justo en 30 días.",
+      "id": 124,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 21,
+        "y": 11,
+        "w": 3,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp) and cloud_RoleName == \"taiga-back\"\n| extend path = tostring(parse_url(url).Path), code = toint(resultCode)\n| where path startswith \"/api/v1/\" and code < 400\n| summarize total = sum(itemCount), bad = sumif(itemCount, duration > $slo_latency_ms)\n| where total > 0\n| project burn_rate = (todouble(bad) / total) / (1.0 - ($slo_latency_target / 100.0))",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 6
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "timeFrom": "6h"
+    },
+    {
+      "type": "stat",
+      "title": "Estado del sistema (política de error budget)",
+      "description": "Lo decide el presupuesto más degradado de los tres. Freeze bloquea los despliegues (workflow error-budget).",
+      "id": 99,
       "datasource": {
         "type": "grafana-azure-monitor-datasource",
         "uid": "${ds}"
@@ -651,6 +1214,114 @@
       "gridPos": {
         "x": 0,
         "y": 11,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp) and cloud_RoleName == \"taiga-back\"\n| extend path = tostring(parse_url(url).Path), code = toint(resultCode)\n| extend v1 = path startswith \"/api/v1/auth\" and not(code between (400 .. 499))\n| extend v2 = name startswith \"GET\" and path matches regex @\"^/api/v1/(userstories|tasks|issues|epics)/?$\" and url has_any (\"assigned_to\", \"assigned_users\") and (not(code between (400 .. 499)) or code == 429)\n| extend v3 = path startswith \"/api/v1/\" and code < 400\n| summarize t1 = sumif(itemCount, v1), b1 = sumif(itemCount, v1 and code >= 500),\n            t2 = sumif(itemCount, v2), b2 = sumif(itemCount, v2 and (code >= 500 or code == 429)),\n            t3 = sumif(itemCount, v3), b3 = sumif(itemCount, v3 and duration > $slo_latency_ms)\n| where t1 + t2 + t3 > 0\n| project budget_min = min_of(\n    iff(t1 == 0, 100.0, 100.0 * (1.0 - (todouble(b1) / t1) / (1.0 - $slo_login / 100.0))),\n    iff(t2 == 0, 100.0, 100.0 * (1.0 - (todouble(b2) / t2) / (1.0 - $slo_api / 100.0))),\n    iff(t3 == 0, 100.0, 100.0 * (1.0 - (todouble(b3) / t3) / (1.0 - $slo_latency_target / 100.0))))",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.0001
+              },
+              {
+                "color": "green",
+                "value": 50.0001
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "range",
+              "options": {
+                "from": null,
+                "to": 0,
+                "result": {
+                  "text": "FREEZE",
+                  "color": "red",
+                  "index": 0
+                }
+              }
+            },
+            {
+              "type": "range",
+              "options": {
+                "from": 0,
+                "to": 50,
+                "result": {
+                  "text": "ALERTA",
+                  "color": "orange",
+                  "index": 1
+                }
+              }
+            },
+            {
+              "type": "range",
+              "options": {
+                "from": 50,
+                "to": null,
+                "result": {
+                  "text": "NORMAL",
+                  "color": "green",
+                  "index": 2
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name"
+      },
+      "timeFrom": "30d"
+    },
+    {
+      "type": "timeseries",
+      "title": "Error budget restante en el tiempo (30d)",
+      "description": "Consumo acumulado de cada presupuesto en la ventana de 30 días.",
+      "id": 10,
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
         "w": 12,
         "h": 8
       },
@@ -663,7 +1334,37 @@
           },
           "queryType": "Azure Log Analytics",
           "azureLogAnalytics": {
-            "query": "requests\n| where $__timeFilter(timestamp)\n| summarize total = sum(itemCount), bad = sumif(itemCount, toint(resultCode) >= 500) by bin(timestamp, 1h)\n| order by timestamp asc\n| extend ct = row_cumsum(total), cb = row_cumsum(bad)\n| project timestamp, budget_restante = iff(ct == 0, 100.0, 100.0 * (1.0 - (todouble(cb) / ct) / (1.0 - ($slo_availability / 100.0))))",
+            "query": "requests\n| where $__timeFilter(timestamp) and cloud_RoleName == \"taiga-back\"\n| extend path = tostring(parse_url(url).Path), code = toint(resultCode)\n| where path startswith \"/api/v1/auth\" and not(code between (400 .. 499))\n| summarize total = sum(itemCount), bad = sumif(itemCount, code >= 500) by bin(timestamp, 1h)\n| order by timestamp asc\n| extend ct = row_cumsum(total), cb = row_cumsum(bad)\n| where ct > 0\n| project timestamp, login = 100.0 * (1.0 - (todouble(cb) / ct) / (1.0 - ($slo_login / 100.0)))",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "time_series"
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp) and cloud_RoleName == \"taiga-back\"\n| extend path = tostring(parse_url(url).Path), code = toint(resultCode)\n| where name startswith \"GET\" and path matches regex @\"^/api/v1/(userstories|tasks|issues|epics)/?$\" and url has_any (\"assigned_to\", \"assigned_users\") and (not(code between (400 .. 499)) or code == 429)\n| summarize total = sum(itemCount), bad = sumif(itemCount, code >= 500 or code == 429) by bin(timestamp, 1h)\n| order by timestamp asc\n| extend ct = row_cumsum(total), cb = row_cumsum(bad)\n| where ct > 0\n| project timestamp, api = 100.0 * (1.0 - (todouble(cb) / ct) / (1.0 - ($slo_api / 100.0)))",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "time_series"
+          }
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp) and cloud_RoleName == \"taiga-back\"\n| extend path = tostring(parse_url(url).Path), code = toint(resultCode)\n| where path startswith \"/api/v1/\" and code < 400\n| summarize total = sum(itemCount), bad = sumif(itemCount, duration > $slo_latency_ms) by bin(timestamp, 1h)\n| order by timestamp asc\n| extend ct = row_cumsum(total), cb = row_cumsum(bad)\n| where ct > 0\n| project timestamp, latency = 100.0 * (1.0 - (todouble(cb) / ct) / (1.0 - ($slo_latency_target / 100.0)))",
             "resources": [
               "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
             ],
@@ -693,7 +1394,7 @@
               },
               {
                 "color": "orange",
-                "value": 25
+                "value": 0
               },
               {
                 "color": "transparent",
@@ -717,7 +1418,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Burn rate",
+      "title": "Burn rate por SLI",
       "description": "",
       "id": 11,
       "datasource": {
@@ -726,7 +1427,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 11,
+        "y": 16,
         "w": 12,
         "h": 8
       },
@@ -739,7 +1440,37 @@
           },
           "queryType": "Azure Log Analytics",
           "azureLogAnalytics": {
-            "query": "requests\n| where $__timeFilter(timestamp)\n| summarize total = sum(itemCount), bad = sumif(itemCount, toint(resultCode) >= 500) by bin(timestamp, $__interval)\n| project timestamp, burn_rate = iff(total == 0, 0.0, (todouble(bad) / total) / (1.0 - ($slo_availability / 100.0)))\n| order by timestamp asc",
+            "query": "requests\n| where $__timeFilter(timestamp) and cloud_RoleName == \"taiga-back\"\n| extend path = tostring(parse_url(url).Path), code = toint(resultCode)\n| where path startswith \"/api/v1/auth\" and not(code between (400 .. 499))\n| summarize total = sum(itemCount), bad = sumif(itemCount, code >= 500) by bin(timestamp, $__interval)\n| where total > 0\n| project timestamp, login = (todouble(bad) / total) / (1.0 - ($slo_login / 100.0))\n| order by timestamp asc",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "time_series"
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp) and cloud_RoleName == \"taiga-back\"\n| extend path = tostring(parse_url(url).Path), code = toint(resultCode)\n| where name startswith \"GET\" and path matches regex @\"^/api/v1/(userstories|tasks|issues|epics)/?$\" and url has_any (\"assigned_to\", \"assigned_users\") and (not(code between (400 .. 499)) or code == 429)\n| summarize total = sum(itemCount), bad = sumif(itemCount, code >= 500 or code == 429) by bin(timestamp, $__interval)\n| where total > 0\n| project timestamp, api = (todouble(bad) / total) / (1.0 - ($slo_api / 100.0))\n| order by timestamp asc",
+            "resources": [
+              "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
+            ],
+            "resultFormat": "time_series"
+          }
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "requests\n| where $__timeFilter(timestamp) and cloud_RoleName == \"taiga-back\"\n| extend path = tostring(parse_url(url).Path), code = toint(resultCode)\n| where path startswith \"/api/v1/\" and code < 400\n| summarize total = sum(itemCount), bad = sumif(itemCount, duration > $slo_latency_ms) by bin(timestamp, $__interval)\n| where total > 0\n| project timestamp, latency = (todouble(bad) / total) / (1.0 - ($slo_latency_target / 100.0))\n| order by timestamp asc",
             "resources": [
               "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
             ],
@@ -797,7 +1528,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 19,
+        "y": 24,
         "w": 24,
         "h": 1
       },
@@ -814,7 +1545,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 20,
+        "y": 25,
         "w": 12,
         "h": 8
       },
@@ -827,7 +1558,7 @@
           },
           "queryType": "Azure Log Analytics",
           "azureLogAnalytics": {
-            "query": "requests\n| where $__timeFilter(timestamp)\n| summarize p50 = percentile(duration, 50), p95 = percentile(duration, 95), p99 = percentile(duration, 99) by bin(timestamp, $__interval)\n| order by timestamp asc",
+            "query": "requests\n| where cloud_RoleName == \"taiga-back\"\n| where $__timeFilter(timestamp)\n| summarize p50 = percentile(duration, 50), p95 = percentile(duration, 95), p99 = percentile(duration, 99) by bin(timestamp, $__interval)\n| order by timestamp asc",
             "resources": [
               "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
             ],
@@ -885,7 +1616,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 20,
+        "y": 25,
         "w": 12,
         "h": 8
       },
@@ -898,7 +1629,7 @@
           },
           "queryType": "Azure Log Analytics",
           "azureLogAnalytics": {
-            "query": "requests\n| where $__timeFilter(timestamp)\n| summarize rps = sum(itemCount) / ($__interval / 1s) by bin(timestamp, $__interval)\n| order by timestamp asc",
+            "query": "requests\n| where cloud_RoleName == \"taiga-back\"\n| where $__timeFilter(timestamp)\n| summarize rps = sum(itemCount) / ($__interval / 1s) by bin(timestamp, $__interval)\n| order by timestamp asc",
             "resources": [
               "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
             ],
@@ -940,7 +1671,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 28,
+        "y": 33,
         "w": 12,
         "h": 8
       },
@@ -953,7 +1684,7 @@
           },
           "queryType": "Azure Log Analytics",
           "azureLogAnalytics": {
-            "query": "requests\n| where $__timeFilter(timestamp)\n| summarize total = sum(itemCount), e5xx = sumif(itemCount, toint(resultCode) >= 500), e4xx = sumif(itemCount, toint(resultCode) between (400 .. 499)) by bin(timestamp, $__interval)\n| project timestamp, ['5xx'] = 100.0 * e5xx / total, ['4xx'] = 100.0 * e4xx / total\n| order by timestamp asc",
+            "query": "requests\n| where cloud_RoleName == \"taiga-back\"\n| where $__timeFilter(timestamp)\n| summarize total = sum(itemCount), e5xx = sumif(itemCount, toint(resultCode) >= 500), e4xx = sumif(itemCount, toint(resultCode) between (400 .. 499)) by bin(timestamp, $__interval)\n| where total > 0\n| project timestamp, ['5xx'] = 100.0 * e5xx / total, ['4xx'] = 100.0 * e4xx / total\n| order by timestamp asc",
             "resources": [
               "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
             ],
@@ -995,7 +1726,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 28,
+        "y": 33,
         "w": 12,
         "h": 8
       },
@@ -1008,7 +1739,7 @@
           },
           "queryType": "Azure Log Analytics",
           "azureLogAnalytics": {
-            "query": "let top = requests\n| where $__timeFilter(timestamp)\n| summarize n = sum(itemCount) by operation_Name\n| top 8 by n\n| project operation_Name;\nrequests\n| where $__timeFilter(timestamp)\n| where operation_Name in (top)\n| summarize n = sum(itemCount) by bin(timestamp, $__interval), operation_Name\n| order by timestamp asc",
+            "query": "let top = requests\n| where cloud_RoleName == \"taiga-back\"\n| where $__timeFilter(timestamp)\n| summarize n = sum(itemCount) by operation_Name\n| top 8 by n\n| project operation_Name;\nrequests\n| where cloud_RoleName == \"taiga-back\"\n| where $__timeFilter(timestamp)\n| where operation_Name in (top)\n| summarize n = sum(itemCount) by bin(timestamp, $__interval), operation_Name\n| order by timestamp asc",
             "resources": [
               "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
             ],
@@ -1046,7 +1777,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 36,
+        "y": 41,
         "w": 24,
         "h": 1
       },
@@ -1063,7 +1794,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 37,
+        "y": 42,
         "w": 8,
         "h": 8
       },
@@ -1076,7 +1807,7 @@
           },
           "queryType": "Azure Log Analytics",
           "azureLogAnalytics": {
-            "query": "dependencies\n| where $__timeFilter(timestamp) and type =~ \"postgresql\"\n| summarize p50 = percentile(duration, 50), p95 = percentile(duration, 95), p99 = percentile(duration, 99) by bin(timestamp, $__interval)\n| order by timestamp asc",
+            "query": "dependencies\n| where cloud_RoleName == \"taiga-back\"\n| where $__timeFilter(timestamp) and type =~ \"postgresql\"\n| summarize p50 = percentile(duration, 50), p95 = percentile(duration, 95), p99 = percentile(duration, 99) by bin(timestamp, $__interval)\n| order by timestamp asc",
             "resources": [
               "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
             ],
@@ -1118,7 +1849,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 37,
+        "y": 42,
         "w": 8,
         "h": 8
       },
@@ -1131,7 +1862,7 @@
           },
           "queryType": "Azure Log Analytics",
           "azureLogAnalytics": {
-            "query": "dependencies\n| where $__timeFilter(timestamp) and type =~ \"postgresql\"\n| summarize qps = sum(itemCount) / ($__interval / 1s) by bin(timestamp, $__interval)\n| order by timestamp asc",
+            "query": "dependencies\n| where cloud_RoleName == \"taiga-back\"\n| where $__timeFilter(timestamp) and type =~ \"postgresql\"\n| summarize qps = sum(itemCount) / ($__interval / 1s) by bin(timestamp, $__interval)\n| order by timestamp asc",
             "resources": [
               "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
             ],
@@ -1173,7 +1904,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 37,
+        "y": 42,
         "w": 8,
         "h": 8
       },
@@ -1186,7 +1917,7 @@
           },
           "queryType": "Azure Log Analytics",
           "azureLogAnalytics": {
-            "query": "dependencies\n| where $__timeFilter(timestamp) and type =~ \"postgresql\"\n| summarize fallidas = sumif(itemCount, success == false) by bin(timestamp, $__interval)\n| order by timestamp asc",
+            "query": "dependencies\n| where cloud_RoleName == \"taiga-back\"\n| where $__timeFilter(timestamp) and type =~ \"postgresql\"\n| summarize fallidas = sumif(itemCount, success == false) by bin(timestamp, $__interval)\n| order by timestamp asc",
             "resources": [
               "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
             ],
@@ -1224,7 +1955,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 45,
+        "y": 50,
         "w": 24,
         "h": 1
       },
@@ -1241,7 +1972,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 46,
+        "y": 51,
         "w": 8,
         "h": 8
       },
@@ -1379,7 +2110,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 46,
+        "y": 51,
         "w": 8,
         "h": 8
       },
@@ -1517,7 +2248,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 46,
+        "y": 51,
         "w": 8,
         "h": 8
       },
@@ -1635,7 +2366,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 54,
+        "y": 59,
         "w": 12,
         "h": 8
       },
@@ -1707,7 +2438,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 54,
+        "y": 59,
         "w": 12,
         "h": 8
       },
@@ -1825,7 +2556,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 62,
+        "y": 67,
         "w": 12,
         "h": 8
       },
@@ -1838,7 +2569,7 @@
           },
           "queryType": "Azure Log Analytics",
           "azureLogAnalytics": {
-            "query": "performanceCounters\n| where $__timeFilter(timestamp)\n| where name has \"Processor Time Normalized\" or counter has \"Processor Time Normalized\"\n| summarize promedio = avg(value), maximo = max(value) by bin(timestamp, $__interval)\n| order by timestamp asc",
+            "query": "performanceCounters\n| where cloud_RoleName == \"taiga-back\"\n| where $__timeFilter(timestamp)\n| where name has \"Processor Time Normalized\" or counter has \"Processor Time Normalized\"\n| summarize promedio = avg(value), maximo = max(value) by bin(timestamp, $__interval)\n| order by timestamp asc",
             "resources": [
               "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
             ],
@@ -1900,7 +2631,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 62,
+        "y": 67,
         "w": 12,
         "h": 8
       },
@@ -1913,7 +2644,7 @@
           },
           "queryType": "Azure Log Analytics",
           "azureLogAnalytics": {
-            "query": "performanceCounters\n| where $__timeFilter(timestamp)\n| where name has \"Private Bytes\" or counter has \"Private Bytes\"\n| summarize promedio = avg(value), maximo = max(value) by bin(timestamp, $__interval)\n| order by timestamp asc",
+            "query": "performanceCounters\n| where cloud_RoleName == \"taiga-back\"\n| where $__timeFilter(timestamp)\n| where name has \"Private Bytes\" or counter has \"Private Bytes\"\n| summarize promedio = avg(value), maximo = max(value) by bin(timestamp, $__interval)\n| order by timestamp asc",
             "resources": [
               "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
             ],
@@ -1951,7 +2682,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 70,
+        "y": 75,
         "w": 24,
         "h": 1
       },
@@ -1968,7 +2699,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 71,
+        "y": 76,
         "w": 12,
         "h": 9
       },
@@ -1981,7 +2712,7 @@
           },
           "queryType": "Azure Log Analytics",
           "azureLogAnalytics": {
-            "query": "requests\n| where $__timeFilter(timestamp)\n| top 20 by duration desc\n| project timestamp, operation_Name, resultCode, duration, operation_Id",
+            "query": "requests\n| where cloud_RoleName == \"taiga-back\"\n| where $__timeFilter(timestamp)\n| top 20 by duration desc\n| project timestamp, operation_Name, resultCode, duration, operation_Id",
             "resources": [
               "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
             ],
@@ -2034,7 +2765,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 71,
+        "y": 76,
         "w": 12,
         "h": 9
       },
@@ -2047,7 +2778,7 @@
           },
           "queryType": "Azure Log Analytics",
           "azureLogAnalytics": {
-            "query": "requests\n| where $__timeFilter(timestamp)\n| where toint(resultCode) >= 500\n| top 20 by timestamp desc\n| project timestamp, operation_Name, resultCode, duration, operation_Id",
+            "query": "requests\n| where cloud_RoleName == \"taiga-back\"\n| where $__timeFilter(timestamp)\n| where toint(resultCode) >= 500\n| top 20 by timestamp desc\n| project timestamp, operation_Name, resultCode, duration, operation_Id",
             "resources": [
               "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
             ],
@@ -2100,7 +2831,7 @@
       "description": "Elige un operation_Id en las tablas de arriba o escríbelo en la variable operation_id.",
       "gridPos": {
         "x": 0,
-        "y": 80,
+        "y": 85,
         "w": 16,
         "h": 12
       },
@@ -2133,7 +2864,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 80,
+        "y": 85,
         "w": 8,
         "h": 12
       },
@@ -2177,7 +2908,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 92,
+        "y": 97,
         "w": 24,
         "h": 1
       },
@@ -2194,7 +2925,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 93,
+        "y": 98,
         "w": 12,
         "h": 8
       },
@@ -2207,7 +2938,7 @@
           },
           "queryType": "Azure Log Analytics",
           "azureLogAnalytics": {
-            "query": "traces\n| where $__timeFilter(timestamp)\n| extend severidad = case(severityLevel == 0, \"Verbose\", severityLevel == 1, \"Information\", severityLevel == 2, \"Warning\", severityLevel == 3, \"Error\", \"Critical\")\n| summarize n = sum(itemCount) by bin(timestamp, $__interval), severidad\n| order by timestamp asc",
+            "query": "traces\n| where cloud_RoleName == \"taiga-back\"\n| where $__timeFilter(timestamp)\n| extend severidad = case(severityLevel == 0, \"Verbose\", severityLevel == 1, \"Information\", severityLevel == 2, \"Warning\", severityLevel == 3, \"Error\", \"Critical\")\n| summarize n = sum(itemCount) by bin(timestamp, $__interval), severidad\n| order by timestamp asc",
             "resources": [
               "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
             ],
@@ -2249,7 +2980,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 93,
+        "y": 98,
         "w": 12,
         "h": 8
       },
@@ -2304,7 +3035,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 101,
+        "y": 106,
         "w": 12,
         "h": 10
       },
@@ -2370,7 +3101,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 101,
+        "y": 106,
         "w": 12,
         "h": 10
       },
@@ -2383,7 +3114,7 @@
           },
           "queryType": "Azure Log Analytics",
           "azureLogAnalytics": {
-            "query": "traces\n| where $__timeFilter(timestamp) and (severityLevel >= 2 or \"$operation_id\" != \"\")\n| where \"$operation_id\" == \"\" or operation_Id == \"$operation_id\"\n| top 100 by timestamp desc\n| project timestamp, severidad = case(severityLevel == 0, \"Verbose\", severityLevel == 1, \"Information\", severityLevel == 2, \"Warning\", severityLevel == 3, \"Error\", \"Critical\"), message, operation_Name, operation_Id",
+            "query": "traces\n| where cloud_RoleName == \"taiga-back\"\n| where $__timeFilter(timestamp) and (severityLevel >= 2 or \"$operation_id\" != \"\")\n| where \"$operation_id\" == \"\" or operation_Id == \"$operation_id\"\n| top 100 by timestamp desc\n| project timestamp, severidad = case(severityLevel == 0, \"Verbose\", severityLevel == 1, \"Information\", severityLevel == 2, \"Warning\", severityLevel == 3, \"Error\", \"Critical\"), message, operation_Name, operation_Id",
             "resources": [
               "/subscriptions/${subscription}/resourceGroups/${resourceGroup}/providers/microsoft.insights/components/appi-taiga"
             ],
@@ -2436,7 +3167,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 111,
+        "y": 116,
         "w": 12,
         "h": 8
       },
@@ -2491,7 +3222,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 111,
+        "y": 116,
         "w": 12,
         "h": 8
       },
@@ -2546,7 +3277,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 119,
+        "y": 124,
         "w": 24,
         "h": 10
       },
@@ -2589,7 +3320,7 @@
       "id": 42,
       "gridPos": {
         "x": 0,
-        "y": 129,
+        "y": 134,
         "w": 24,
         "h": 1
       },
@@ -2607,7 +3338,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 130,
+        "y": 135,
         "w": 24,
         "h": 8
       },
@@ -2655,7 +3386,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 138,
+        "y": 143,
         "w": 12,
         "h": 8
       },
@@ -2710,7 +3441,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 138,
+        "y": 143,
         "w": 12,
         "h": 8
       },
@@ -2765,7 +3496,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 146,
+        "y": 151,
         "w": 24,
         "h": 10
       },

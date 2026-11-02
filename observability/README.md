@@ -36,7 +36,7 @@ Terraform crea `appi-taiga` y le pasa la connection string a taiga-back como sec
 
 `grafana/taiga-golden-signals.json`:
 
-1. **SLOs y error budget (30 días):** SLI de disponibilidad y de latencia, presupuesto restante (gauge y burndown), errores que aún caben, burn rate 1 h y 6 h.
+1. **SLOs y error budget (30 días):** los tres SLIs del informe (login, API de consultas y latencia), presupuesto restante de cada uno, eventos malos que aún caben, burn rate 1 h y 6 h, burndown y el estado de la política (NORMAL / ALERTA / FREEZE).
 2. **Golden signals de la API:** latencia p50/p95/p99, tráfico (req/s), errores 4xx/5xx, top de endpoints.
 3. **Golden signals de PostgreSQL** (medidos desde el cliente): latencia, consultas/s, fallos.
 4. **Saturación:** CPU y memoria (% del límite), reinicios y réplicas de `ca-taiga`, `ca-postgres` y `ca-rabbitmq`; peticiones del ingress por código de estado; CPU y memoria de los workers de taiga-back.
@@ -47,7 +47,17 @@ Clic en un `operation_Id` (o escribirlo en la variable `operation_id`) filtra la
 
 7. **Arranque y servicios sin SDK propio:** arranques de taiga-back (paso, migración y error), peticiones y latencia p95 por servicio desde el gateway, errores de taiga-events y RabbitMQ.
 
-Los SLOs son variables del dashboard (por defecto 99.5 % sin 5xx y 95 % bajo 1000 ms).
+### SLIs y SLOs
+
+Ventana: 30 días rodantes. Solo cuentan las peticiones de taiga-back (`cloud_RoleName == "taiga-back"`).
+
+| SLI | Peticiones válidas | Malas (consumen presupuesto) | SLO |
+| --- | --- | --- | --- |
+| 1. Login | `/api/v1/auth*`, sin los 4xx | 5xx | 99.9 % |
+| 2. API de consultas | `GET` a `/userstories`, `/tasks`, `/issues` y `/epics` con `assigned_to` o `assigned_users`, sin los 4xx salvo el 429 | 5xx y 429 | 99.5 % |
+| 3. Latencia | peticiones exitosas (< 400) a `/api/v1/` | más de 300 ms | 95 % |
+
+Los SLOs y el umbral de latencia son variables del dashboard (`slo_login`, `slo_api`, `slo_latency_target`, `slo_latency_ms`). Si se cambian, hay que cambiarlos también en `alerts.tf` y en `error-budget.sh`.
 
 ### Importarlo
 
@@ -74,16 +84,32 @@ Definidas en `terraform/modules/container_apps/alerts.tf`:
 | --- | --- |
 | `alert-taiga-startup-failed` (sev 1) | taiga-back falla en migrate, loaddata o collectstatic |
 | `alert-taiga-restarts-{taiga,postgres,rabbitmq}` (sev 2) | algún contenedor de esa Container App se reinicia (una alerta por app: Azure no admite una sola sobre varias) |
-| `alert-taiga-slo-fast-burn` (sev 1) | burn rate > 14.4 en 1 h (el error budget de 30 días se acaba en ~2 días) |
-| `alert-taiga-slo-slow-burn` (sev 2) | burn rate > 6 en 6 h (se acaba en ~5 días) |
+| `alert-taiga-slo-{login,api,latency}-fast-burn` (sev 1) | burn rate > 14.4 en 1 h **y** en 5 min (el error budget de 30 días se acaba en ~2 días) |
+| `alert-taiga-slo-{login,api,latency}-slow-burn` (sev 1) | burn rate > 6 en 6 h **y** en 30 min (se acaba en ~5 días) |
 | `alert-taiga-events-crash` (sev 2) | taiga-events termina por una excepción no controlada |
 | `alert-taiga-availability` (sev 1) | el test de disponibilidad de `/api/v1/` falla desde 2 o más ubicaciones |
 
 - **Correo:** secreto de GitHub `ALERT_EMAIL`. Sin él no se crea el action group y las alertas solo se ven en *Azure Monitor > Alerts*.
 - **Test de disponibilidad (bajo demanda):** variable de repositorio `AVAILABILITY_TEST_ENABLED = true` y volver a correr el workflow de Terraform. Consulta `/api/v1/` cada 5 min desde 3 ubicaciones, por lo que mantiene `ca-taiga` despierto: activarlo solo para las demos.
 
+## Política de error budget
+
+`error-budget.sh` calcula los tres presupuestos de 30 días; el estado lo decide el más degradado:
+
+| Estado | Condición | Efecto |
+| --- | --- | --- |
+| NORMAL | los tres > 50 % | nada |
+| ALERTA | alguno <= 50 % | aviso en el check: revisión estricta y pruebas de carga en los PRs |
+| FREEZE | alguno <= 0 % | falla el check *Error budget* del PR y no corre el plan/apply de Terraform |
+
+- `.github/workflows/error-budget.yml` corre cada hora: con FREEZE abre un issue con la etiqueta `release-freeze` y lo cierra cuando el presupuesto más degradado vuelve a tener al menos un 20 %. Mientras el issue esté abierto, el freeze sigue aunque el presupuesto ya sea positivo.
+- `terraform-ci.yml` lo llama en cada PR y en cada push a `main`, antes del plan.
+- Hotfix: etiqueta `hotfix` en el PR o `[hotfix]` en el mensaje del commit.
+- Para que el check bloquee el merge, *Error budget* debe estar como check obligatorio en la protección de `main`. La aprobación conjunta del SRE Lead y el Product Owner se configura con revisores obligatorios en esa misma protección.
+
 ## Limitaciones
 
 - La saturación de PostgreSQL y RabbitMQ se ve solo como CPU y memoria del contenedor. Para conexiones, locks o profundidad de colas haría falta un OpenTelemetry Collector con los receivers `postgresql` y `rabbitmq` exportando a Application Insights.
 - taiga-protected y taiga-front no tienen SDK: su tráfico, errores y latencia se ven desde el access log del gateway. En taiga-events no se trazan los mensajes de AMQP, solo logs y excepciones.
 - La ventana de 30 días coincide con la retención de `log-taiga` (`retention_in_days = 30`).
+- Las alertas de Azure Monitor sobre logs no pueden mirar más de 2 días, así que el presupuesto agotado (30 días) no es una alerta de Azure: lo detecta el workflow `error-budget.yml`.
