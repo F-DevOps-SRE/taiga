@@ -174,5 +174,5 @@ jobs:
       - name: Terraform Apply
         run: terraform apply tfplan
 
-      - name: Terraform Destroy
-        run: terraform destroy -auto-approve -input=false -lock-timeout=5m -no-color
+      #- name: Terraform Destroy
+      #  run: terraform destroy -auto-approve -input=false -lock-timeout=5m -no-color
