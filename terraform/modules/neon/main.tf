@@ -17,6 +17,10 @@ resource "neon_project" "taiga" {
   region_id  = "aws-us-east-2"
   org_id     = var.org_id
 
+  # Ventana de restauración (PITR). Sin este valor el provider pide 1 día y el plan
+  # gratuito permite como máximo 6 h: la API rechaza el cambio con un 400.
+  history_retention_seconds = 0
+
   lifecycle {
     # Un plan que quiera borrar el proyecto (y la base) falla en vez de aplicarse.
     prevent_destroy = true
