@@ -29,7 +29,6 @@ locals {
   data_volume_name = "taiga-data"
   data_mount_path  = "/taiga"
 
-  postgres_host = azurerm_container_app.postgres.name
   rabbitmq_host = azurerm_container_app.rabbitmq.name
 }
 
@@ -79,104 +78,17 @@ resource "azurerm_container_app_environment_storage" "storage_mount" {
   share_name                   = var.storage_share_name
 }
 
-# 4. Container App: Postgres (Base de Datos)
-resource "azurerm_container_app" "postgres" {
-  name                         = "ca-postgres"
-  container_app_environment_id = azurerm_container_app_environment.cae.id
-  resource_group_name          = var.resource_group_name
-  revision_mode                = "Single"
-
-  template {
-    # Siempre encendido: no tiene volumen, si escala a cero vuelve con la base
-    # vacía (o la cola sin vhost) y taiga-back, ya migrado, falla con
-    # "relation ... does not exist". Además una app TCP no despierta sola.
-    min_replicas = 0
-    max_replicas = 1
-
-    container {
-      name = "postgres"
-      # La misma versión que docker-compose. En PostgreSQL 18 los NOT NULL pasan a
-      # pg_constraint y la migración history.0011 de Taiga (que borra y recrea
-      # todas las constraints de una tabla) falla con "is an identity column".
-      image  = "postgres:15-alpine"
-      cpu    = 0.25
-      memory = "0.5Gi"
-
-      # Logs con proceso, usuario, base y aplicación en cada línea (el STATEMENT
-      # de un error sale en otra fila: se une por el [pid]), consultas > 1 s y
-      # esperas por locks.
-      args = [
-        "postgres",
-        "-c", "log_line_prefix=%m [%p] %q%u@%d app=%a ",
-        "-c", "log_min_duration_statement=1000",
-        "-c", "log_lock_waits=on",
-      ]
-
-      startup_probe {
-        transport               = "TCP"
-        port                    = 5432
-        interval_seconds        = 10
-        failure_count_threshold = 10
-      }
-
-      readiness_probe {
-        transport        = "TCP"
-        port             = 5432
-        interval_seconds = 10
-      }
-
-      liveness_probe {
-        transport        = "TCP"
-        port             = 5432
-        interval_seconds = 30
-      }
-
-      env {
-        name  = "POSTGRES_DB"
-        value = var.postgres_db
-      }
-
-      env {
-        name  = "POSTGRES_USER"
-        value = var.postgres_user
-      }
-
-      env {
-        name        = "POSTGRES_PASSWORD"
-        secret_name = "postgres-password"
-      }
-    }
-  }
-
-  secret {
-    name  = "postgres-password"
-    value = var.postgres_password
-  }
-
-  ingress {
-    external_enabled = false
-    target_port      = 5432
-    exposed_port     = 5432
-    transport        = "tcp"
-
-    traffic_weight {
-      latest_revision = true
-      percentage      = 100
-    }
-  }
-}
-
-# 5. Container App: RabbitMQ (Cola de Mensajes)
+# 4. Container App: RabbitMQ (Cola de Mensajes)
 resource "azurerm_container_app" "rabbitmq" {
   name                         = "ca-rabbitmq"
   container_app_environment_id = azurerm_container_app_environment.cae.id
   resource_group_name          = var.resource_group_name
   revision_mode                = "Single"
+  workload_profile_name        = "Consumption"
 
   template {
-    # Siempre encendido: no tiene volumen, si escala a cero vuelve con la base
-    # vacía (o la cola sin vhost) y taiga-back, ya migrado, falla con
-    # "relation ... does not exist". Además una app TCP no despierta sola.
+    # Sin volumen: al escalar a cero se pierden los eventos en cola (el vhost lo
+    # vuelve a crear RABBITMQ_DEFAULT_VHOST). Ojo: una app TCP no despierta sola.
     min_replicas = 0
     max_replicas = 1
 
@@ -250,13 +162,14 @@ resource "azurerm_container_app" "rabbitmq" {
   }
 }
 
-# 6. Container App: Taiga (gateway nginx + 4 sidecars: back, front, events, protected)
+# 5. Container App: Taiga (gateway nginx + 4 sidecars: back, front, events, protected)
 #    Es el único punto de entrada público. Total de recursos: 2 vCPU / 4Gi.
 resource "azurerm_container_app" "taiga" {
   name                         = local.taiga_app_name
   container_app_environment_id = azurerm_container_app_environment.cae.id
   resource_group_name          = var.resource_group_name
   revision_mode                = "Single"
+  workload_profile_name        = "Consumption"
 
   template {
     # Una sola réplica: el backend corre migraciones al arrancar.
@@ -326,11 +239,21 @@ resource "azurerm_container_app" "taiga" {
       }
       env {
         name  = "POSTGRES_HOST"
-        value = local.postgres_host
+        value = var.postgres_host
       }
       env {
         name  = "POSTGRES_PORT"
         value = "5432"
+      }
+      # Neon exige TLS. El host es el pooler (PgBouncer en modo transacción), que
+      # no admite los cursores del lado del servidor que Django usa en .iterator().
+      env {
+        name  = "POSTGRES_SSLMODE"
+        value = "require"
+      }
+      env {
+        name  = "POSTGRES_DISABLE_SERVER_SIDE_CURSORS"
+        value = "true"
       }
       env {
         name  = "POSTGRES_DB"
@@ -392,8 +315,8 @@ resource "azurerm_container_app" "taiga" {
       }
 
       # Gunicorn abre el 8000 solo al terminar migrate, loaddata y collectstatic
-      # (docker/startup.py). Sin volumen en Postgres, cada arranque migra desde
-      # cero: se dan hasta 10 min (10 x 60 s) antes de reiniciar el contenedor.
+      # (docker/startup.py). La primera vez contra una base vacía de Neon migra
+      # desde cero: se dan hasta 10 min (10 x 60 s) antes de reiniciar el contenedor.
       # Los probes son TCP y no HTTP para no llenar la tabla requests (y el SLO).
       startup_probe {
         transport               = "TCP"

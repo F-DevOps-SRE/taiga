@@ -8,11 +8,6 @@ variable "resource_group_name" {
   default = "rg-taiga"
 }
 
-variable "postgres_password" {
-  type      = string
-  sensitive = true
-}
-
 variable "rabbitmq_pass" {
   type      = string
   sensitive = true

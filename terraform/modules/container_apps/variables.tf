@@ -34,16 +34,20 @@ variable "taiga_secret_key" {
   sensitive = true
 }
 
-# --- Usuarios / nombres de PostgreSQL y RabbitMQ ---
+# --- PostgreSQL (Neon, ver modules/neon) ---
+variable "postgres_host" {
+  type = string
+}
+
 variable "postgres_db" {
-  type    = string
-  default = "taiga"
+  type = string
 }
 
 variable "postgres_user" {
-  type    = string
-  default = "taiga"
+  type = string
 }
+
+# --- RabbitMQ ---
 
 variable "rabbitmq_user" {
   type    = string

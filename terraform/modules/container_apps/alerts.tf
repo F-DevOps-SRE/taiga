@@ -1,7 +1,7 @@
 # Alertas de Taiga.
 #
 #   alert-taiga-startup-failed        taiga-back no pudo arrancar (migrate/loaddata/collectstatic)  [demo]
-#   alert-taiga-restarts-<app>        algún contenedor de ca-taiga, ca-postgres o ca-rabbitmq se reinició
+#   alert-taiga-restarts-<app>        algún contenedor de ca-taiga o ca-rabbitmq se reinició
 #   alert-taiga-slo-<sli>-fast-burn   burn rate > 14.4 en 1 h y en 5 min (el error budget se acaba en ~2 días)  [demo]
 #   alert-taiga-slo-<sli>-slow-burn   burn rate > 6 en 6 h y en 30 min (se acaba en ~5 días)  [demo]
 #   alert-taiga-events-crash          taiga-events terminó por una excepción no controlada  [demo]
@@ -101,7 +101,6 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "startup_failed" {
 resource "azurerm_monitor_metric_alert" "restarts" {
   for_each = {
     taiga    = azurerm_container_app.taiga.id
-    postgres = azurerm_container_app.postgres.id
     rabbitmq = azurerm_container_app.rabbitmq.id
   }
   name                = "alert-taiga-restarts-${each.key}"

@@ -9,6 +9,10 @@ terraform {
       source  = "hashicorp/random"
       version = "~>3.0"
     }
+    neon = {
+      source  = "kislerdm/neon"
+      version = "~> 0.18"
+    }
   }
 
   # Estado remoto en Azure Storage. La cuenta (stdevopssre) se creó a mano y no
@@ -25,6 +29,9 @@ provider "azurerm" {
   features {}
   subscription_id = var.subscription_id
 }
+
+# La API key se lee de la variable de entorno NEON_API_KEY (secreto en el workflow).
+provider "neon" {}
 
 # Referencia al grupo de recursos existente
 data "azurerm_resource_group" "rg" {
@@ -45,7 +52,20 @@ module "storage" {
   location            = data.azurerm_resource_group.rg.location
 }
 
-# 3. Módulo de Container Apps
+# 3. Base de datos en Neon (fuera de Azure)
+module "neon" {
+  source = "./modules/neon"
+  org_id = "org-wispy-cloud-84381910"
+}
+
+# El proyecto se creó desde la consola de Neon: el primer apply lo agrega al estado
+# sin tocarlo. Después de eso este bloque no hace nada.
+import {
+  to = module.neon.neon_project.taiga
+  id = "restless-star-54395891"
+}
+
+# 4. Módulo de Container Apps
 module "container_apps" {
   source               = "./modules/container_apps"
   resource_group_name  = data.azurerm_resource_group.rg.name
@@ -55,7 +75,10 @@ module "container_apps" {
   storage_account_key  = module.storage.primary_access_key
   storage_share_name   = module.storage.share_name
 
-  postgres_password = var.postgres_password
+  postgres_host     = module.neon.host
+  postgres_db       = module.neon.database
+  postgres_user     = module.neon.user
+  postgres_password = module.neon.password
   rabbitmq_password = var.rabbitmq_pass
   taiga_secret_key  = var.taiga_secret_key
 
