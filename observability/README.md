@@ -102,7 +102,7 @@ Definidas en `terraform/modules/container_apps/alerts.tf`:
 | ALERTA | alguno <= 50 % | aviso en el check: revisión estricta y pruebas de carga en los PRs |
 | FREEZE | alguno <= 0 % | warning y issue `release-freeze` (no bloquea merges ni despliegues) |
 
-- `.github/workflows/error-budget.yml` corre cada hora: con FREEZE abre un issue con la etiqueta `release-freeze` y lo cierra cuando el presupuesto más degradado vuelve a tener al menos un 20 %. Mientras el issue esté abierto, el freeze sigue aunque el presupuesto ya sea positivo.
+- `.github/workflows/error-budget.yml` corre cada día (06:17 UTC): con FREEZE abre un issue con la etiqueta `release-freeze` y lo cierra cuando el presupuesto más degradado vuelve a tener al menos un 20 %. Mientras el issue esté abierto, el freeze sigue aunque el presupuesto ya sea positivo.
 - Es solo informativo: `terraform-ci.yml` ya no lo ejecuta antes del plan, así que un freeze no bloquea el despliegue.
 
 ## Limitaciones

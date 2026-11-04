@@ -1,13 +1,13 @@
 name: "Error budget"
 
 # Política de error budget: calcula los tres presupuestos de 30 días.
-#   - cada hora: abre el issue "release-freeze" si alguno se agota y lo cierra
+#   - cada día: abre el issue "release-freeze" si alguno se agota y lo cierra
 #     cuando el más degradado recupera un 20 % (GitHub notifica a quien siga el repo)
 #   - informativo: con FREEZE deja un warning, no bloquea merges ni despliegues
 
 on:
   schedule:
-    - cron: "17 * * * *"
+    - cron: "17 6 * * *"
   workflow_dispatch:
 
 permissions:
