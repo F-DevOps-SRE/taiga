@@ -53,16 +53,23 @@ resource "azurerm_application_insights" "appi" {
 
 # 2. Container Apps Environment (cae-taiga)
 resource "azurerm_container_app_environment" "cae" {
-  name                           = "cae-taiga"
-  location                       = var.location
-  resource_group_name            = var.resource_group_name
-  infrastructure_subnet_id       = var.subnet_id
-  internal_load_balancer_enabled = false
-  log_analytics_workspace_id     = azurerm_log_analytics_workspace.logs.id
+  name                       = "cae-taiga"
+  location                   = var.location
+  resource_group_name        = var.resource_group_name
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.logs.id
 
-  # Azure crea y nombra solo el grupo de recursos de infraestructura
-  # (ME_cae-taiga_rg-taiga_eastus). Como no está en la configuración, el provider
-  # ve "valor -> null" y fuerza reemplazar el environment (y todas las apps) en cada plan.
+  # Sin VNet propia: Azure administra la red (balanceador e IP pública) en su
+  # propia suscripción, así que no se cobran aparte.
+
+  # Explícito para que el environment sea de tipo "workload profiles": las apps
+  # usan workload_profile_name = "Consumption".
+  workload_profile {
+    name                  = "Consumption"
+    workload_profile_type = "Consumption"
+  }
+
+  # Si Azure asigna un grupo de recursos de infraestructura, el provider ve
+  # "valor -> null" y fuerza reemplazar el environment (y todas las apps) en cada plan.
   lifecycle {
     ignore_changes = [infrastructure_resource_group_name]
   }
