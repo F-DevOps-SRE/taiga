@@ -15,7 +15,7 @@ html {
 }
 body {
     @include font-type(regular);
-    // background-color: #ff00ff; // fuchsia background for the demo
+    background-color: #ff00ff; // fuchsia background for the demo
     line-height: 1.25;
     min-height: 100%;
     overflow-x: hidden;
