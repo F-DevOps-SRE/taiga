@@ -6,8 +6,6 @@ name: "Error budget"
 #   - informativo: con FREEZE deja un warning, no bloquea merges ni despliegues
 
 on:
-  schedule:
-    - cron: "17 6 * * *"
   workflow_dispatch:
 
 permissions:
